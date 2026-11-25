@@ -7,7 +7,12 @@
     <UseWPF>true</UseWPF>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <AssemblyTitle>Apex 精華挑片</AssemblyTitle>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+    <None Remove="Assets\icon-source.png" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ApexHighlighter.Core\ApexHighlighter.Core.csproj" />
   </ItemGroup>
