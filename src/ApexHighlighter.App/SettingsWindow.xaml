@@ -2,16 +2,73 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:ApexHighlighter.App"
-        Title="{l:Tr set.title}" Width="440" SizeToContent="Height" ResizeMode="NoResize"
+        Title="{l:Tr set.title}" Width="480" SizeToContent="Height" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
         Background="#1F2229" Foreground="#E6E8EE" FontFamily="{l:Tr app.font}" FontSize="13">
+    <Window.Resources>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#111318"/>
+            <Setter Property="Foreground" Value="#E6E8EE"/>
+            <Setter Property="BorderBrush" Value="#3A3F4A"/>
+            <Setter Property="CaretBrush" Value="#E6E8EE"/>
+            <Setter Property="Padding" Value="4,3"/>
+        </Style>
+        <Style TargetType="PasswordBox">
+            <Setter Property="Background" Value="#111318"/>
+            <Setter Property="Foreground" Value="#E6E8EE"/>
+            <Setter Property="BorderBrush" Value="#3A3F4A"/>
+            <Setter Property="CaretBrush" Value="#E6E8EE"/>
+            <Setter Property="Padding" Value="4,3"/>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Foreground" Value="#E6E8EE"/>
+            <Setter Property="Background" Value="#2A2E37"/>
+            <Setter Property="BorderBrush" Value="#3A3F4A"/>
+            <Setter Property="Padding" Value="14,5"/>
+        </Style>
+        <Style TargetType="TextBlock" x:Key="Label">
+            <Setter Property="Foreground" Value="#9AA1AE"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </Window.Resources>
     <StackPanel Margin="20">
         <TextBlock Text="{l:Tr set.uiLang}" FontWeight="SemiBold" Margin="0,0,0,6"/>
         <ComboBox x:Name="UiLanguageBox" Width="220" HorizontalAlignment="Left"
                   DisplayMemberPath="NativeName" SelectionChanged="UiLanguageBox_SelectionChanged"
                   AutomationProperties.Name="{l:Tr set.uiLang}"/>
         <TextBlock Text="{l:Tr set.uiLangNote}" TextWrapping="Wrap" Foreground="#9AA1AE" FontSize="12" Margin="0,8,0,0"/>
+
+        <Border BorderBrush="#2E323B" BorderThickness="0,1,0,0" Margin="0,18,0,14"/>
+
+        <TextBlock Text="{l:Tr set.obs}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <CheckBox x:Name="ObsEnabledBox" Foreground="#E6E8EE" Margin="0,0,0,10">
+            <TextBlock Text="{l:Tr set.obsEnable}" TextWrapping="Wrap"/>
+        </CheckBox>
+        <Grid x:Name="ObsFields">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" MinWidth="70"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="80"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Style="{StaticResource Label}" Text="{l:Tr set.obsHost}" Margin="0,0,8,0"/>
+            <TextBox Grid.Column="1" x:Name="ObsHostBox" AutomationProperties.Name="{l:Tr set.obsHost}"/>
+            <TextBlock Grid.Column="2" Style="{StaticResource Label}" Text="{l:Tr set.obsPort}" Margin="12,0,8,0"/>
+            <TextBox Grid.Column="3" x:Name="ObsPortBox" AutomationProperties.Name="{l:Tr set.obsPort}"/>
+            <TextBlock Grid.Row="1" Style="{StaticResource Label}" Text="{l:Tr set.obsPassword}" Margin="0,8,8,0"/>
+            <PasswordBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" x:Name="ObsPasswordBox" Margin="0,8,0,0" AutomationProperties.Name="{l:Tr set.obsPassword}"/>
+        </Grid>
+        <DockPanel Margin="0,10,0,0">
+            <Button DockPanel.Dock="Left" Click="ObsTest_Click" x:Name="ObsTestButton" Content="{l:Tr set.obsTest}"/>
+            <TextBlock x:Name="ObsTestResult" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" FontSize="12"/>
+        </DockPanel>
+        <TextBlock Text="{l:Tr set.obsNote}" TextWrapping="Wrap" Foreground="#9AA1AE" FontSize="12" Margin="0,8,0,0"/>
+
         <Button Content="{l:Tr set.close}" HorizontalAlignment="Right" Margin="0,20,0,0" Padding="16,5" IsCancel="True" IsDefault="True"
-                Click="Close_Click" Foreground="#E6E8EE" Background="#2A2E37" BorderBrush="#3A3F4A"/>
+                Click="Close_Click"/>
     </StackPanel>
 </Window>

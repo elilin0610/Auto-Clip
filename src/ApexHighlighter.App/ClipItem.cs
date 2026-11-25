@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Windows.Media;
 using ApexHighlighter.Core;
 
 namespace ApexHighlighter.App;
@@ -27,6 +28,12 @@ public sealed class ClipItem : INotifyPropertyChanged
     public static ClipItem Manual(double start, double end, double center) => new(start, end, null, center);
 
     public bool IsAuto => _candidate != null;
+
+    /// <summary>Where the preview picture is taken: just after the first prompt appears, or the playhead for a manual clip.</summary>
+    public double ThumbTime => _candidate != null ? _candidate.FirstEvent + 0.4 : _manualCenter;
+
+    private ImageSource? _thumbnail;
+    public ImageSource? Thumbnail { get => _thumbnail; set { _thumbnail = value; Raise(); } }
 
     public string Reason => _candidate != null ? _candidate.Reason : Loc.T("clip.manual");
 

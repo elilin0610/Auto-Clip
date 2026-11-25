@@ -1,5 +1,8 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using ApexHighlighter.Core;
 
 namespace ApexHighlighter.App;
 
@@ -7,6 +10,41 @@ namespace ApexHighlighter.App;
 public sealed class AppSettings
 {
     public string? UiLanguage { get; set; }
+
+    // Remembered between runs.
+    public string? OutputDir { get; set; }
+    public ExportFormat ExportFormat { get; set; } = ExportFormat.Landscape;
+    public double? WindowLeft { get; set; }
+    public double? WindowTop { get; set; }
+    public double? WindowWidth { get; set; }
+    public double? WindowHeight { get; set; }
+    public bool WindowMaximized { get; set; }
+
+    // OBS (obs-websocket 5).
+    public bool ObsEnabled { get; set; }
+    public string ObsHost { get; set; } = "localhost";
+    public int ObsPort { get; set; } = 4455;
+    /// <summary>The OBS password, encrypted with Windows DPAPI for the current user (never stored as plain text).</summary>
+    public string? ObsPasswordProtected { get; set; }
+
+    private static readonly byte[] Entropy = "ApexHighlighter.obs"u8.ToArray();
+
+    public string? GetObsPassword()
+    {
+        if (string.IsNullOrEmpty(ObsPasswordProtected)) return null;
+        try
+        {
+            var plain = ProtectedData.Unprotect(Convert.FromBase64String(ObsPasswordProtected), Entropy, DataProtectionScope.CurrentUser);
+            return Encoding.UTF8.GetString(plain);
+        }
+        catch { return null; }   // Saved by another Windows account or corrupted: treat as no password.
+    }
+
+    public void SetObsPassword(string? password)
+    {
+        ObsPasswordProtected = string.IsNullOrEmpty(password) ? null
+            : Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(password), Entropy, DataProtectionScope.CurrentUser));
+    }
 
     private static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ApexHighlighter", "settings.json");

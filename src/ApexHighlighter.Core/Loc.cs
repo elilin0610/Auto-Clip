@@ -136,7 +136,7 @@ public static class Loc
             "ダウン／キルの表示は主に画面の横 {0:P0}、縦 {1:P0} の位置（この録画から自動計測。既定値ではありません）"],
 
         ["verify.decodeFail"] = ["full decode failed", "完整解碼失敗", "全体のデコードに失敗"],
-        ["verify.not169"] = ["not 16:9 ({0}x{1})", "畫面不是 16:9（{0}x{1}）", "16:9 ではありません（{0}x{1}）"],
+        ["verify.wrongAspect"] = ["not {2} ({0}x{1})", "畫面不是 {2}（{0}x{1}）", "{2} ではありません（{0}x{1}）"],
         ["verify.noAudio"] = ["no audio", "沒有音訊", "音声がありません"],
         ["verify.startDiff"] = ["audio and video start {0:0} ms apart", "音訊與畫面起點差 {0:0} ms", "音声と映像の開始が {0:0} ms ずれています"],
         ["verify.lenDiff"] = ["audio and video lengths differ by {0:0} ms", "音訊與畫面長度差 {0:0} ms", "音声と映像の長さが {0:0} ms 違います"],
@@ -325,5 +325,59 @@ public static class Loc
             "立即套用，下次開啟時沿用。只影響本程式的文字；遊戲語言會從錄影自動偵測。",
             "すぐに反映され、次回も使われます。変わるのはこのアプリの表示だけで、ゲームの言語は録画から自動で判定します。"],
         ["set.close"] = ["Close", "關閉", "閉じる"],
+        ["set.obs"] = ["OBS", "OBS", "OBS"],
+        ["set.obsEnable"] = [
+            "When OBS stops recording, import and scan the recording automatically",
+            "OBS 停止錄影後，自動匯入並掃描這次的錄影",
+            "OBS の録画が止まったら、その録画を自動で読み込んでスキャンする"],
+        ["set.obsHost"] = ["Address", "位址", "アドレス"],
+        ["set.obsPort"] = ["Port", "連接埠", "ポート"],
+        ["set.obsPassword"] = ["Password", "密碼", "パスワード"],
+        ["set.obsTest"] = ["Test connection", "測試連線", "接続テスト"],
+        ["set.obsNote"] = [
+            "In OBS: Tools → WebSocket Server Settings → tick \"Enable WebSocket server\". The password is under \"Show Connect Info\". It is stored encrypted, and only your Windows account can read it. This app only listens to OBS and never changes its settings.",
+            "在 OBS：工具 → WebSocket 伺服器設定 → 勾選「啟用 WebSocket 伺服器」，密碼在「顯示連線資訊」裡。密碼會加密存在本機，只有你的 Windows 帳戶能解開。本程式只聽 OBS 的通知，不會改 OBS 的設定。",
+            "OBS で：ツール → WebSocket サーバー設定 →「WebSocket サーバーを有効にする」にチェック。パスワードは「接続情報を表示」にあります。パスワードは暗号化して保存され、あなたの Windows アカウントだけが読めます。このアプリは OBS の通知を受け取るだけで、OBS の設定は変更しません。"],
+        ["obs.testing"] = ["Connecting…", "連線中…", "接続中…"],
+        ["obs.ok"] = ["Connected to OBS {0}", "已連上 OBS {0}", "OBS {0} に接続しました"],
+        ["obs.fail"] = ["Could not connect: {0}", "連不上：{0}", "接続できません：{0}"],
+        ["obs.authFail"] = ["Wrong password", "密碼錯誤", "パスワードが違います"],
+        ["obs.state.Connecting"] = ["OBS: connecting…", "OBS：連線中…", "OBS：接続中…"],
+        ["obs.state.Connected"] = ["OBS: connected", "OBS：已連線", "OBS：接続済み"],
+        ["obs.state.Disconnected"] = ["OBS: not connected (retrying)", "OBS：未連線（自動重試）", "OBS：未接続（再試行中）"],
+        ["obs.state.AuthFailed"] = ["OBS: wrong password", "OBS：密碼錯誤", "OBS：パスワードが違います"],
+        ["obs.state.Off"] = ["OBS: off", "OBS：關閉", "OBS：オフ"],
+        ["log.obsRecording"] = [
+            "OBS finished recording: {0}. Importing and scanning…",
+            "OBS 錄影結束：{0}，自動匯入並掃描…",
+            "OBS の録画が終わりました：{0}。読み込んでスキャンします…"],
+        ["log.obsBusy"] = [
+            "OBS finished recording {0}; it will be scanned when the current task is done.",
+            "OBS 錄影結束：{0}；目前正在忙，完成後再掃描。",
+            "OBS の録画が終わりました：{0}。今の作業が終わったらスキャンします。"],
+        ["log.obsMissing"] = [
+            "OBS reported a recording that can't be found: {0}",
+            "OBS 回報的錄影檔找不到：{0}",
+            "OBS が知らせた録画ファイルが見つかりません：{0}"],
+
+        // ── Export formats, timeline, thumbnails ──
+        ["exp.format"] = ["Format", "格式", "形式"],
+        ["fmt.Landscape"] = ["Landscape 16:9", "橫式 16:9", "横 16:9"],
+        ["fmt.VerticalCrop"] = ["Vertical 9:16 (crop middle)", "直式 9:16（裁中間）", "縦 9:16（中央を切り抜き）"],
+        ["fmt.VerticalFit"] = ["Vertical 9:16 (whole frame)", "直式 9:16（完整畫面）", "縦 9:16（画面全体）"],
+        ["exp.vcropInfo"] = [
+            "Output {0}×{1} for Shorts: the middle of the frame, so the kill feed and screen edges are cut off",
+            "輸出 {0}×{1}（Shorts 用）：只留畫面中間，擊殺列表和左右兩邊會被裁掉",
+            "出力 {0}×{1}（ショート用）：画面の中央だけ。キルログと左右の端は切れます"],
+        ["exp.vfitInfo"] = [
+            "Output {0}×{1} for Shorts: the whole frame across the middle, with a blurred copy above and below",
+            "輸出 {0}×{1}（Shorts 用）：完整畫面放在中間，上下用模糊的畫面補滿",
+            "出力 {0}×{1}（ショート用）：画面全体を中央に置き、上下はぼかした画面で埋めます"],
+        ["hint.scanning"] = [
+            "Scanning… {0} prompts so far. The yellow ticks on the timeline show where; click one to look while the scan goes on.",
+            "掃描中…目前讀到 {0} 個提示。時間軸上的黃色刻度就是位置，掃描時也可以點一下先看。",
+            "スキャン中…これまでに {0} 件の表示を読み取りました。タイムラインの黄色い目盛りが位置です。スキャン中でもクリックして確認できます。"],
+        ["tl.dragStart"] = ["Drag to move the start", "拖曳調整起點", "ドラッグで開始位置を調整"],
+        ["tl.dragEnd"] = ["Drag to move the end", "拖曳調整終點", "ドラッグで終了位置を調整"],
     };
 }

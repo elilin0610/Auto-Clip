@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Markup;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using ApexHighlighter.Core;
@@ -25,6 +26,15 @@ public partial class MainWindow : Window
     // The list hint depends on state, so remember which one is showing and re-render it when the language changes.
     private string _hintKey = "hint.initial";
     private object?[] _hintArgs = [];
+
+    // Prompt positions shown as ticks on the timeline: live while scanning, then the deduplicated events.
+    private List<(double Time, EventKind Kind)> _ticks = [];
+    // Which clip edge is being dragged on the timeline ("s" or "e"), if any.
+    private string? _dragEdge;
+    private bool _fillingFormats;
+
+    private ObsWatcher? _obs;
+    private string? _pendingObsPath;
 
     // Game language found by the last scan (null = not scanned yet). Always detected automatically.
     private string? _detectedGameLang;
@@ -52,7 +62,12 @@ public partial class MainWindow : Window
         _timer.Tick += Timer_Tick;
         _timer.Start();
 
-        OutDirBox.Text = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Apex精華");
+        var st = App.Settings;
+        OutDirBox.Text = !string.IsNullOrWhiteSpace(st.OutputDir) ? st.OutputDir
+            : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Apex精華");
+        RestorePlacement();
+        Closing += (_, _) => SaveSettings();
+        Closed += async (_, _) => await StopObsAsync();
 
         try { _cfg = KeywordConfig.Load(); }
         catch (Exception ex) { Log(Loc.F("log.keywordsFail", ex.Message)); }
@@ -65,6 +80,8 @@ public partial class MainWindow : Window
         Loc.Changed += OnLanguageChanged;
         Closed += (_, _) => Loc.Changed -= OnLanguageChanged;
         ApplyLanguage();
+        FormatBox.SelectedIndex = (int)st.ExportFormat;
+        RestartObs();
 
         var args = Environment.GetCommandLineArgs();
         if (args.Length > 1 && File.Exists(args[1])) Loaded += async (_, _) => await OpenFileAsync(args[1]);
@@ -77,7 +94,128 @@ public partial class MainWindow : Window
 
     // ───────────── Language ─────────────
 
-    private void Settings_Click(object sender, RoutedEventArgs e) => new SettingsWindow { Owner = this }.ShowDialog();
+    private void Settings_Click(object sender, RoutedEventArgs e)
+    {
+        var s = App.Settings;
+        var before = (s.ObsEnabled, s.ObsHost, s.ObsPort, s.ObsPasswordProtected);
+        new SettingsWindow { Owner = this }.ShowDialog();
+        if (before != (s.ObsEnabled, s.ObsHost, s.ObsPort, s.ObsPasswordProtected)) RestartObs();
+    }
+
+    // ───────────── Remembered settings ─────────────
+
+    private void RestorePlacement()
+    {
+        var s = App.Settings;
+        if (s.WindowWidth is not { } w || s.WindowHeight is not { } h || s.WindowLeft is not { } l || s.WindowTop is not { } t) return;
+        // Only restore if the window would still be on a screen (a monitor may have been unplugged).
+        var screen = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
+            SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
+        if (!screen.IntersectsWith(new Rect(l + 40, t + 10, Math.Max(1, w - 80), 40))) return;
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Left = l; Top = t; Width = Math.Max(MinWidth, w); Height = Math.Max(MinHeight, h);
+        if (s.WindowMaximized) Loaded += (_, _) => WindowState = WindowState.Maximized;
+    }
+
+    private void SaveSettings()
+    {
+        var s = App.Settings;
+        var r = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
+        if (!r.IsEmpty) { s.WindowLeft = r.Left; s.WindowTop = r.Top; s.WindowWidth = r.Width; s.WindowHeight = r.Height; }
+        s.WindowMaximized = WindowState == WindowState.Maximized;
+        s.OutputDir = OutDirBox.Text.Trim();
+        s.ExportFormat = SelectedFormat;
+        s.Save();
+    }
+
+    private void OutDirBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        App.Settings.OutputDir = OutDirBox.Text.Trim();
+        App.Settings.Save();
+    }
+
+    // ───────────── Export format ─────────────
+
+    private ExportFormat SelectedFormat => FormatBox.SelectedIndex >= 0 ? (ExportFormat)FormatBox.SelectedIndex : ExportFormat.Landscape;
+
+    private void FillFormats()
+    {
+        int sel = FormatBox.SelectedIndex;
+        _fillingFormats = true;
+        FormatBox.Items.Clear();
+        foreach (var f in Enum.GetValues<ExportFormat>()) FormatBox.Items.Add(Loc.T("fmt." + f));
+        FormatBox.SelectedIndex = sel;
+        _fillingFormats = false;
+    }
+
+    private void FormatBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_fillingFormats || FormatBox.SelectedIndex < 0) return;
+        App.Settings.ExportFormat = SelectedFormat;
+        App.Settings.Save();
+        if (_info != null) ExportInfo.Text = DescribeOutput(_info);
+    }
+
+    // ───────────── OBS ─────────────
+
+    /// <summary>(Re)connects to OBS with the current settings, or stops listening if it's turned off.</summary>
+    private void RestartObs()
+    {
+        _ = StopObsAsync();
+        var s = App.Settings;
+        if (!s.ObsEnabled) { ObsText.Visibility = Visibility.Collapsed; return; }
+
+        var w = new ObsWatcher(s.ObsHost, s.ObsPort, s.GetObsPassword());
+        _obs = w;
+        w.StateChanged += state => Dispatcher.BeginInvoke(() =>
+        {
+            if (_obs != w) return;
+            UpdateObsText();
+            if (state is ObsState.Connected or ObsState.AuthFailed) Log(Loc.T("obs.state." + state));
+        });
+        w.RecordingStopped += path => Dispatcher.BeginInvoke(async () => { if (_obs == w) await OnObsRecordingStoppedAsync(path); });
+        ObsText.Visibility = Visibility.Visible;
+        UpdateObsText();
+        w.Start();
+    }
+
+    private async Task StopObsAsync()
+    {
+        var old = _obs;
+        _obs = null;
+        if (old != null) await old.DisposeAsync();
+    }
+
+    private void UpdateObsText()
+    {
+        if (_obs == null) return;
+        ObsText.Text = Loc.T("obs.state." + _obs.State);
+        ObsText.ToolTip = _obs.LastError;
+        ObsText.Foreground = new SolidColorBrush(_obs.State switch
+        {
+            ObsState.Connected => Color.FromRgb(0x7F, 0xD1, 0x8B),
+            ObsState.AuthFailed => Color.FromRgb(0xE5, 0x48, 0x4D),
+            _ => Color.FromRgb(0x9A, 0xA1, 0xAE),
+        });
+    }
+
+    /// <summary>OBS finished a recording: import it and scan it, or queue it if something is already running.</summary>
+    private async Task OnObsRecordingStoppedAsync(string path)
+    {
+        if (_cts != null) { _pendingObsPath = path; Log(Loc.F("log.obsBusy", path)); return; }
+        await Task.Delay(1500);   // Give OBS a moment to finish writing the file.
+        if (!File.Exists(path)) { Log(Loc.F("log.obsMissing", path)); return; }
+        Log(Loc.F("log.obsRecording", path));
+        await OpenFileAsync(path);
+        if (_info != null && string.Equals(_info.Path, path, StringComparison.OrdinalIgnoreCase)) await RunScanAsync();
+    }
+
+    private void RunPendingObs()
+    {
+        if (_pendingObsPath is not { } p) return;
+        _pendingObsPath = null;
+        Dispatcher.BeginInvoke(async () => await OnObsRecordingStoppedAsync(p));
+    }
 
     private void OnLanguageChanged()
     {
@@ -91,6 +229,8 @@ public partial class MainWindow : Window
         // Tells WPF which glyph variants to use (CJK characters differ between Chinese and Japanese fonts).
         Language = XmlLanguage.GetLanguage(Loc.Current switch { "zh-Hant" => "zh-TW", "ja" => "ja-JP", _ => "en-US" });
 
+        FillFormats();
+        UpdateObsText();
         GameLangText.Text = _detectedGameLang == null ? Loc.T("game.auto")
             : Loc.F(_gameLangSure ? "game.detected" : "game.uncertain", GameLanguageNames.GetValueOrDefault(_detectedGameLang, _detectedGameLang));
 
@@ -100,7 +240,7 @@ public partial class MainWindow : Window
             int track = AudioBox.SelectedIndex;
             FillAudioTracks(_info);
             AudioBox.SelectedIndex = track;
-            ExportInfo.Text = DescribeCanvas(_info);
+            ExportInfo.Text = DescribeOutput(_info);
         }
         ListHint.Text = Loc.F(_hintKey, _hintArgs);
         PlayButton.Content = Loc.T(_playing ? "player.pause" : "player.play");
@@ -116,8 +256,11 @@ public partial class MainWindow : Window
         if (info.AudioTracks.Count == 0) AudioBox.Items.Add(Loc.T("exp.noTracks"));
     }
 
-    private static string DescribeCanvas(MediaInfo info)
+    private string DescribeOutput(MediaInfo info)
     {
+        var f = SelectedFormat;
+        if (f != ExportFormat.Landscape)
+            return Loc.F(f == ExportFormat.VerticalCrop ? "exp.vcropInfo" : "exp.vfitInfo", Exporter.VerticalW, Exporter.VerticalH);
         var (cw, ch) = Exporter.Canvas(info.Width, info.Height);
         return cw == info.Width && ch == info.Height
             ? Loc.F("exp.native", cw, ch)
@@ -166,7 +309,8 @@ public partial class MainWindow : Window
 
             FillAudioTracks(info);
             AudioBox.SelectedIndex = Math.Max(0, info.DefaultAudioTrack());
-            ExportInfo.Text = DescribeCanvas(info);
+            ExportInfo.Text = DescribeOutput(info);
+            _ticks = [];
 
             _previewUnsupported = false;
             Player.Source = new Uri(path);
@@ -188,9 +332,11 @@ public partial class MainWindow : Window
 
     // ───────────── Scan ─────────────
 
-    private async void Scan_Click(object sender, RoutedEventArgs e)
+    private async void Scan_Click(object sender, RoutedEventArgs e) => await RunScanAsync();
+
+    private async Task RunScanAsync()
     {
-        if (_info == null || _cfg == null) return;
+        if (_info == null || _cfg == null || _cts != null) return;
         var opt = new ScanOptions
         {
             Language = "auto",
@@ -199,7 +345,18 @@ public partial class MainWindow : Window
         _cts = new CancellationTokenSource();
         SetBusy(true, Loc.T("st.scanning"));
         PausePlayer();
-        var progress = new Progress<ScanProgress>(p => { Progress.Value = p.Fraction; StatusText.Text = p.Message; });
+        _ticks = [];
+        DrawMarkers();
+        var progress = new Progress<ScanProgress>(p =>
+        {
+            Progress.Value = p.Fraction; StatusText.Text = p.Message;
+            if (p.Hits != null)
+            {
+                _ticks = TicksFromHits(p.Hits);
+                SetHint("hint.scanning", _ticks.Count);
+                DrawMarkers();
+            }
+        });
         try
         {
             Log(Loc.F("log.scanStart", opt.SampleFps, opt.OcrWidth, opt.Workers, opt.Language));
@@ -210,6 +367,9 @@ public partial class MainWindow : Window
             foreach (var c in _clips.Where(c => c.IsAuto).ToList()) _clips.Remove(c);
             foreach (var c in result.Candidates) _clips.Add(ClipItem.FromCandidate(c));
             SortClips();
+            _ticks = result.Events.Select(ev => (ev.Time, ev.Kind)).ToList();
+            DrawMarkers();
+            _ = LoadThumbnailsAsync();
 
             _detectedGameLang = result.Language;
             _gameLangSure = result.LanguageConfident;
@@ -234,7 +394,7 @@ public partial class MainWindow : Window
             Log(Loc.F("log.scanFailed", ex.Message));
             MessageBox.Show(this, ex.Message, Loc.T("st.scanFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
         }
-        finally { _cts?.Dispose(); _cts = null; UpdateButtons(); }
+        finally { _cts?.Dispose(); _cts = null; UpdateButtons(); RunPendingObs(); }
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => _cts?.Cancel();
@@ -253,7 +413,9 @@ public partial class MainWindow : Window
         try { Directory.CreateDirectory(outDir); }
         catch (Exception ex) { MessageBox.Show(this, Loc.F("msg.cantCreateDir", ex.Message), Title); return; }
 
-        var opt = new ExportOptions { AudioTrack = Math.Max(0, AudioBox.SelectedIndex) };
+        var opt = new ExportOptions { AudioTrack = Math.Max(0, AudioBox.SelectedIndex), Format = SelectedFormat };
+        App.Settings.OutputDir = outDir;
+        App.Settings.Save();
         _cts = new CancellationTokenSource();
         SetBusy(true, Loc.T("st.exporting"));
         PausePlayer();
@@ -265,7 +427,7 @@ public partial class MainWindow : Window
             foreach (var c in items)
             {
                 i++;
-                var name = Exporter.SuggestName(_info, c.Number, c.Start, c.End);
+                var name = Exporter.SuggestName(_info, c.Number, c.Start, c.End, opt.Format);
                 var outPath = UniquePath(System.IO.Path.Combine(outDir, name));
                 int idx = i;
                 var prog = new Progress<double>(p =>
@@ -277,7 +439,7 @@ public partial class MainWindow : Window
                 c.SetStatus(ClipStatus.Exporting);
                 var file = await Task.Run(() => Exporter.ExportAsync(_info, c.Start, c.End, outPath, opt, prog, _cts.Token));
                 StatusText.Text = Loc.F("st.checking", idx, items.Count);
-                var check = await Task.Run(() => Exporter.VerifyAsync(file, c.End - c.Start, _cts.Token));
+                var check = await Task.Run(() => Exporter.VerifyAsync(file, c.End - c.Start, _cts.Token, opt.Format));
                 c.SetStatus(check.Ok ? ClipStatus.Done : ClipStatus.Problem, System.IO.Path.GetFileName(file));
                 Log(Loc.F("log.exportOne", c.Number, file, sw.Elapsed.TotalSeconds, check.Summary));
             }
@@ -296,7 +458,7 @@ public partial class MainWindow : Window
             Log(Loc.F("log.exportFailed", ex.Message));
             MessageBox.Show(this, ex.Message, Loc.T("st.exportFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
         }
-        finally { _cts?.Dispose(); _cts = null; UpdateButtons(); }
+        finally { _cts?.Dispose(); _cts = null; UpdateButtons(); RunPendingObs(); }
     }
 
     private static string UniquePath(string p)
@@ -314,7 +476,10 @@ public partial class MainWindow : Window
     private void BrowseOut_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new OpenFolderDialog { Title = Loc.T("dlg.folderTitle"), InitialDirectory = Directory.Exists(OutDirBox.Text) ? OutDirBox.Text : null };
-        if (dlg.ShowDialog(this) == true) OutDirBox.Text = dlg.FolderName;
+        if (dlg.ShowDialog(this) != true) return;
+        OutDirBox.Text = dlg.FolderName;
+        App.Settings.OutputDir = dlg.FolderName;
+        App.Settings.Save();
     }
 
     private void OpenOut_Click(object sender, RoutedEventArgs e)
@@ -336,6 +501,7 @@ public partial class MainWindow : Window
         _clips.Add(c);
         SortClips();
         ClipList.SelectedItem = c;
+        _ = LoadThumbnailsAsync();
     }
 
     private void Remove_Click(object sender, RoutedEventArgs e)
@@ -425,22 +591,123 @@ public partial class MainWindow : Window
         if (sel != null) ClipList.SelectedItem = sel;
     }
 
+    private static readonly SolidColorBrush TickBrush = Frozen(Color.FromRgb(0xFF, 0xD1, 0x66));
+    private static readonly SolidColorBrush HandleBrush = Frozen(Color.FromRgb(0xF2, 0xF3, 0xF5));
+    private static SolidColorBrush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
+
+    /// <summary>Clip ranges, prompt ticks, and drag handles for the selected clip's start and end.</summary>
     private void DrawMarkers()
     {
         Markers.Children.Clear();
         if (_info == null || _info.Duration <= 0) return;
-        double w = Markers.ActualWidth;
+        double w = Markers.ActualWidth, h = Math.Max(1, Markers.ActualHeight), dur = _info.Duration;
         foreach (var c in _clips)
         {
             var r = new Rectangle
             {
-                Width = Math.Max(2, (c.End - c.Start) / _info.Duration * w),
-                Height = 12,
+                Width = Math.Max(2, (c.End - c.Start) / dur * w),
+                Height = h,
                 Fill = new SolidColorBrush(c == Selected ? Color.FromRgb(0xE5, 0x48, 0x4D) : c.Keep ? Color.FromRgb(0x8A, 0x3A, 0x3E) : Color.FromRgb(0x4A, 0x4F, 0x5A)),
                 ToolTip = c.Title,
+                Tag = c,
+                Cursor = Cursors.Hand,
             };
-            Canvas.SetLeft(r, c.Start / _info.Duration * w);
+            Canvas.SetLeft(r, c.Start / dur * w);
             Markers.Children.Add(r);
+        }
+        foreach (var (t, kind) in _ticks)
+        {
+            var r = new Rectangle { Width = 2, Height = h, Fill = TickBrush, Tag = t, Cursor = Cursors.Hand, ToolTip = $"{TimeFmt.Hms(t)}  {kind.Name()}" };
+            Canvas.SetLeft(r, t / dur * w - 1);
+            Markers.Children.Add(r);
+        }
+        if (Selected is { } sel)
+        {
+            foreach (var (edge, t) in new[] { ("s", sel.Start), ("e", sel.End) })
+            {
+                var r = new Rectangle
+                {
+                    Width = 6, Height = h, Fill = HandleBrush, RadiusX = 2, RadiusY = 2, Tag = edge, Cursor = Cursors.SizeWE,
+                    ToolTip = Loc.T(edge == "s" ? "tl.dragStart" : "tl.dragEnd"),
+                };
+                Canvas.SetLeft(r, t / dur * w - 3);
+                Markers.Children.Add(r);
+            }
+        }
+    }
+
+    /// <summary>Collapses raw OCR samples (one prompt shows up in several frames) into one tick per prompt.</summary>
+    private static List<(double, EventKind)> TicksFromHits(IReadOnlyList<PromptHit> hits)
+    {
+        var ticks = new List<(double, EventKind)>();
+        var last = new Dictionary<EventKind, double>();
+        foreach (var hit in hits)
+        {
+            if (!last.TryGetValue(hit.Kind, out var prev) || hit.Time - prev > 4) ticks.Add((hit.Time, hit.Kind));
+            last[hit.Kind] = hit.Time;
+        }
+        return ticks;
+    }
+
+    // Timeline strip: drag the selected clip's handles, click a tick to look at that prompt, click a clip to select it.
+    private void Markers_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_info == null) return;
+        switch ((e.OriginalSource as FrameworkElement)?.Tag)
+        {
+            case string edge when Selected != null:
+                _dragEdge = edge;
+                PausePlayer();
+                Markers.CaptureMouse();
+                break;
+            case double tickTime:
+                SeekTo(tickTime - 3);
+                break;
+            case ClipItem c:
+                ClipList.SelectedItem = c;
+                break;
+            default:
+                SeekTo(e.GetPosition(Markers).X / Math.Max(1, Markers.ActualWidth) * _info.Duration);
+                break;
+        }
+        e.Handled = true;
+    }
+
+    private void Markers_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_dragEdge == null || Selected is not { } c || _info == null) return;
+        var t = Math.Clamp(e.GetPosition(Markers).X / Math.Max(1, Markers.ActualWidth) * _info.Duration, 0, _info.Duration);
+        if (_dragEdge == "s") { c.Start = Math.Min(t, c.End - 1); SeekTo(c.Start); }
+        else { c.End = Math.Max(t, c.Start + 1); SeekTo(c.End); }
+        DrawMarkers();
+    }
+
+    private void Markers_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_dragEdge == null) return;
+        _dragEdge = null;
+        Markers.ReleaseMouseCapture();
+        SortClips();
+        DrawMarkers();
+    }
+
+    /// <summary>Fills in preview pictures for clips that don't have one yet.</summary>
+    private async Task LoadThumbnailsAsync()
+    {
+        if (_info == null) return;
+        var path = _info.Path;
+        foreach (var c in _clips.Where(c => c.Thumbnail == null).ToList())
+        {
+            byte[]? jpg = null;
+            try { jpg = await Thumbnail.GrabJpegAsync(path, c.ThumbTime, 224); } catch { }
+            if (jpg == null || _info?.Path != path) continue;
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.StreamSource = new MemoryStream(jpg);
+            bmp.EndInit();
+            bmp.Freeze();
+            c.Thumbnail = bmp;
         }
     }
 

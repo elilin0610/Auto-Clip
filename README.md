@@ -27,18 +27,36 @@ dotnet run --project src\ApexHighlighter.Cli -c Release -- scan "錄影.mkv"
 dotnet run --project src\ApexHighlighter.Cli -c Release -- export "錄影.mkv" 12:30 13:15 "輸出.mp4" --track 0
 dotnet run --project src\ApexHighlighter.Cli -c Release -- synccheck "錄影.mkv" 12:30 "輸出.mp4"
 dotnet run --project src\ApexHighlighter.Cli -c Release -- ocr "錄影.mkv" 754.5
+dotnet run --project src\ApexHighlighter.Cli -c Release -- export "錄影.mkv" 12:30 13:15 "直式.mp4" --format vfit
+dotnet run --project src\ApexHighlighter.Cli -c Release -- thumb "錄影.mkv" 754.5 "縮圖.jpg"
+dotnet run --project src\ApexHighlighter.Cli -c Release -- obswatch --port 4455
 ```
+
+`obswatch` 的 OBS 密碼請放在環境變數 `APEXHL_OBS_PASSWORD`，不要打在指令裡（會留在命令歷史）。
 
 ## 介面
 
 1. **匯入錄影…**，或直接把 MKV／MP4 拖進視窗。程式會量每條音軌的音量，預設選有聲音的那條。
-2. **掃描精華**：最多列 3 段。每段顯示時間、觸發原因（例如「擊倒 ×2、淘汰」）、每個提示的時間點，以及片頭往前抓了幾秒。沒把握就不列。
+2. **掃描精華**：最多列 3 段。每段有縮圖、時間、觸發原因（例如「擊倒 ×2、淘汰」）、每個提示的時間點，以及片頭往前抓了幾秒。沒把握就不列。
+   - 掃描時，讀到的提示會即時以黃色刻度出現在時間軸上，點刻度就跳到那裡先看，不用等掃完。
 3. 點一段：播放器會跳到起點，可以調整：
+   - 直接在時間軸上拖曳選取片段兩端的白色把手
    - 起點／終點直接打時間，或用 ±0.2／±1 秒、「設為目前」（快捷鍵 I／O）
    - 「▶ 播放這段」「▶ 聽結尾」
    - 取消勾選＝跳過，「刪除」＝從清單拿掉
 4. **＋ 在目前位置新增**：掃描沒抓到的，可以手動加。
-5. **匯出勾選的片段**：每段一個 MP4，預設存到 `影片\Apex精華`。匯出後自動檢查：完整解碼、16:9、影音起點和長度。
+5. **匯出勾選的片段**：每段一個 MP4，預設存到 `影片\Apex精華`。匯出後自動檢查：完整解碼、畫面比例、影音起點和長度。
+   - 格式：橫式 16:9／直式 9:16（裁中間）／直式 9:16（完整畫面）。直式是 1080×1920，給 YouTube Shorts 用；「裁中間」會切掉擊殺列表和左右兩邊，「完整畫面」把整個畫面放中間、上下補模糊背景。
+6. 輸出資料夾、格式、視窗大小和位置會記住，下次開啟沿用。
+
+## OBS 關台自動掃描
+
+設定 →「OBS」：勾選「OBS 停止錄影後，自動匯入並掃描這次的錄影」，填位址（預設 `localhost`）、連接埠（預設 4455）和密碼，按「測試連線」確認。
+
+- OBS 那邊要先開：工具 → WebSocket 伺服器設定 → 勾選「啟用 WebSocket 伺服器」，密碼在「顯示連線資訊」。需要 OBS 28 以上。
+- 錄影一停止，程式就自動匯入那個檔案並開始掃描；如果正在掃描或匯出，會等目前的工作做完。
+- 本程式只聽 OBS 的通知，不會改 OBS 的任何設定。OBS 沒開時會每 10 秒重試；密碼錯誤就停止重試。
+- 密碼用 Windows DPAPI 加密後存在 `settings.json`，只有你的 Windows 帳戶能解開，不會以明碼存檔。
 
 ## 介面語言
 
@@ -81,4 +99,7 @@ acceptance/                驗收紀錄與掃描報告
 
 ## 這版不做
 
-Twitch 下載、YouTube 上傳、直式裁切、付費 API。等挑片品質過關，再做 OBS 關台觸發和 YouTube 私人上傳。
+Twitch 下載、YouTube 上傳、付費 API。
+
+- YouTube 私人上傳需要你在 Google Cloud 建立 OAuth 用戶端並授權本程式，屬於你的帳號設定，要你自己操作後才能接上。
+- Twitch 下載需要另外安裝下載工具（例如 yt-dlp）。

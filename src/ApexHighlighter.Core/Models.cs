@@ -69,6 +69,8 @@ public sealed class ScanProgress
 {
     public double Fraction { get; init; }
     public string Message { get; init; } = "";
+    /// <summary>Prompts read so far (raw samples, once the game language is locked), so the UI can show them during the scan.</summary>
+    public IReadOnlyList<PromptHit>? Hits { get; init; }
 }
 
 public sealed class ScanResult

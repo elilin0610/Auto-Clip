@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using ApexHighlighter.Core;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -8,8 +8,10 @@ if (args.Length == 0)
     Console.WriteLine("""
         用法：
           apexhl scan <錄影檔> [--lang auto|en|zh-Hant…] [--fps 2] [--width 1280] [--workers N] [--track N]
-          apexhl export <錄影檔> <開始秒或hh:mm:ss> <結束> <輸出.mp4> [--track N]
+          apexhl export <錄影檔> <開始秒或hh:mm:ss> <結束> <輸出.mp4> [--track N] [--format landscape|vcrop|vfit]
           apexhl ocr <錄影檔> <秒> [--width 1280]      列出該時間點畫面上 OCR 讀到的文字
+          apexhl thumb <錄影檔> <秒> <輸出.jpg> [--width 192]
+          apexhl obswatch [--host localhost] [--port 4455]   等 OBS 停止錄影（密碼放環境變數 APEXHL_OBS_PASSWORD）
         """);
     return 1;
 }
@@ -60,11 +62,15 @@ switch (args[0])
     {
         var info = await MediaInfo.ProbeAsync(args[1], cts.Token);
         if (!TimeFmt.TryParse(args[2], out var s) || !TimeFmt.TryParse(args[3], out var e)) { Console.Error.WriteLine("時間格式錯誤"); return 2; }
-        var opt = new ExportOptions { AudioTrack = int.Parse(Opt("--track", "0")) };
+        var opt = new ExportOptions
+        {
+            AudioTrack = int.Parse(Opt("--track", "0")),
+            Format = Opt("--format", "landscape") switch { "vcrop" => ExportFormat.VerticalCrop, "vfit" => ExportFormat.VerticalFit, _ => ExportFormat.Landscape },
+        };
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var outFile = await Exporter.ExportAsync(info, s, e, args[4], opt, null, cts.Token);
         Console.WriteLine($"匯出 {outFile}，耗時 {sw.Elapsed.TotalSeconds:0.0}s");
-        var check = await Exporter.VerifyAsync(outFile, e - s, cts.Token);
+        var check = await Exporter.VerifyAsync(outFile, e - s, cts.Token, opt.Format);
         Console.WriteLine(check.Summary);
         return check.Ok ? 0 : 3;
     }
@@ -107,6 +113,28 @@ switch (args[0])
             double videoOffsetMs = (bestF - 10) / fps * 1000;
             Console.WriteLine($"輸出 {at:0.0}s：音訊對到原檔偏移 {audioOffsetMs:+0;-0;0} ms（相關 {best:0.00}），畫面偏移 {videoOffsetMs:+0;-0;0} ms（平均差 {bestD:0.0}），音畫相對差 {audioOffsetMs - videoOffsetMs:+0;-0;0} ms");
         }
+        return 0;
+    }
+    case "thumb":
+    {
+        var jpg = await Thumbnail.GrabJpegAsync(args[1], double.Parse(args[2], CultureInfo.InvariantCulture), int.Parse(Opt("--width", "192")), cts.Token);
+        if (jpg == null) { Console.Error.WriteLine("讀不到畫面"); return 2; }
+        await File.WriteAllBytesAsync(args[3], jpg);
+        Console.WriteLine($"{args[3]}  {jpg.Length} bytes");
+        return 0;
+    }
+    case "obswatch":
+    {
+        // The password comes from an environment variable so it never ends up in shell history.
+        var host = Opt("--host", "localhost"); var port = int.Parse(Opt("--port", "4455"));
+        var pw = Environment.GetEnvironmentVariable("APEXHL_OBS_PASSWORD");
+        try { Console.WriteLine($"OBS {await ObsWatcher.TestAsync(host, port, pw, cts.Token)}"); }
+        catch (Exception ex) { Console.Error.WriteLine($"{ex.GetType().Name}: {ex.Message}"); return 2; }
+        await using var w = new ObsWatcher(host, port, pw);
+        w.StateChanged += st => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {st} {w.LastError}");
+        w.RecordingStopped += path => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] 錄影結束：{path}");
+        w.Start();
+        try { await Task.Delay(Timeout.Infinite, cts.Token); } catch (OperationCanceledException) { }
         return 0;
     }
     case "ocr":

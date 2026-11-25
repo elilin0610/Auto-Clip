@@ -81,8 +81,16 @@ public sealed class Scanner
                 }
                 if (framesDone % 10 == 0)
                 {
+                    List<PromptHit>? snap = null;
+                    lock (gate)
+                        if (locked != null)
+                        {
+                            var key = locked.Key;
+                            snap = collected.Where(c => c.PairKey == key && !c.Spectating).SelectMany(c => c.Hits).OrderBy(h => h.Time).ToList();
+                        }
                     progress?.Report(new ScanProgress
                     {
+                        Hits = snap,
                         Fraction = Math.Min(1, framesDone / (double)totalFrames),
                         Message = Loc.F("progress.scanning", TimeFmt.Hms(f.Time), TimeFmt.Hms(info.Duration))
                                   + (locked != null ? Loc.F("progress.lang", locked.Matcher.LanguageId) : Loc.T("progress.detecting")),

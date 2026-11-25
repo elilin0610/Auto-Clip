@@ -4,9 +4,13 @@ using System.Text.Json;
 
 namespace ApexHighlighter.Core;
 
+/// <summary>Landscape keeps the whole frame (16:9, black bars if needed). The vertical ones are 1080×1920 for Shorts.</summary>
+public enum ExportFormat { Landscape, VerticalCrop, VerticalFit }
+
 public sealed class ExportOptions
 {
     public int AudioTrack { get; set; } = 0;
+    public ExportFormat Format { get; set; } = ExportFormat.Landscape;
     /// <summary>"auto" tries NVENC (GPU) first and falls back to libx264.</summary>
     public string Encoder { get; set; } = "auto";
     public int Quality { get; set; } = 19;
@@ -28,6 +32,33 @@ public static class Exporter
         return (w + (w % 2), h + (h % 2));
     }
 
+    public const int VerticalW = 1080, VerticalH = 1920;
+
+    /// <summary>Size of the exported video for a given source and format.</summary>
+    public static (int W, int H) OutputSize(int srcW, int srcH, ExportFormat format) =>
+        format == ExportFormat.Landscape ? Canvas(srcW, srcH) : (VerticalW, VerticalH);
+
+    /// <summary>The -vf filtergraph for a format. Never scales the landscape output; vertical ones are always 1080×1920.</summary>
+    public static string VideoFilter(int srcW, int srcH, ExportFormat format)
+    {
+        const string tail = "setsar=1,format=yuv420p";
+        switch (format)
+        {
+            case ExportFormat.VerticalCrop:
+                // The middle 9:16 slice at full height, scaled to 1080×1920.
+                return $"crop=trunc(ih*9/16/2)*2:ih:(iw-ow)/2:0,scale={VerticalW}:{VerticalH}:flags=lanczos,{tail}";
+            case ExportFormat.VerticalFit:
+                // The whole frame fitted to the width, on a blurred, darkened, zoomed copy of itself.
+                return $"split=2[bg][fg];" +
+                       $"[bg]scale={VerticalW}:{VerticalH}:force_original_aspect_ratio=increase,crop={VerticalW}:{VerticalH},boxblur=24:2,eq=brightness=-0.12[bgb];" +
+                       $"[fg]scale={VerticalW}:-2:flags=lanczos[fgs];" +
+                       $"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,{tail}";
+            default:
+                var (cw, ch) = Canvas(srcW, srcH);
+                return (cw != srcW || ch != srcH ? $"pad={cw}:{ch}:(ow-iw)/2:(oh-ih)/2:color=black," : "") + tail;
+        }
+    }
+
     public static async Task<string> ExportAsync(MediaInfo info, double start, double end, string output, ExportOptions opt,
         IProgress<double>? progress, CancellationToken ct)
     {
@@ -38,12 +69,7 @@ public static class Exporter
             throw new InvalidOperationException(Loc.T("err.overwriteSource"));
         Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
 
-        var (cw, ch) = Canvas(info.Width, info.Height);
-        var vf = new List<string>();
-        if (cw != info.Width || ch != info.Height)
-            vf.Add($"pad={cw}:{ch}:(ow-iw)/2:(oh-ih)/2:color=black");
-        vf.Add("setsar=1");
-        vf.Add("format=yuv420p");
+        var vf = VideoFilter(info.Width, info.Height, opt.Format);
 
         string encoder = opt.Encoder;
         if (encoder == "auto") encoder = await NvencAvailableAsync(ct) ? "h264_nvenc" : "libx264";
@@ -62,7 +88,7 @@ public static class Exporter
         return dst;
     }
 
-    private static async Task RunEncodeAsync(MediaInfo info, double start, double end, string output, List<string> vf, string encoder,
+    private static async Task RunEncodeAsync(MediaInfo info, double start, double end, string output, string vf, string encoder,
         ExportOptions opt, IProgress<double>? progress, CancellationToken ct)
     {
         var inv = CultureInfo.InvariantCulture;
@@ -75,7 +101,7 @@ public static class Exporter
         };
         if (info.AudioTracks.Count > 0)
             args.AddRange(["-map", $"0:a:{Math.Clamp(opt.AudioTrack, 0, info.AudioTracks.Count - 1)}"]);
-        args.AddRange(["-vf", string.Join(",", vf)]);
+        args.AddRange(["-vf", vf]);
         if (encoder == "h264_nvenc")
             args.AddRange(["-c:v", "h264_nvenc", "-preset", "p5", "-tune", "hq", "-rc", "vbr", "-cq", opt.Quality.ToString(inv), "-b:v", "0", "-profile:v", "high"]);
         else
@@ -123,8 +149,9 @@ public static class Exporter
         return _nvencOk.Value;
     }
 
-    /// <summary>Checks the exported file: fully decodable, 16:9, and audio/video start and length line up.</summary>
-    public static async Task<ExportCheck> VerifyAsync(string file, double expectedDuration, CancellationToken ct)
+    /// <summary>Checks the exported file: fully decodable, the right shape (16:9 or 9:16), and audio/video start and length line up.</summary>
+    public static async Task<ExportCheck> VerifyAsync(string file, double expectedDuration, CancellationToken ct,
+        ExportFormat format = ExportFormat.Landscape)
     {
         var json = await FFmpegLocator.RunAsync(FFmpegLocator.FFprobe,
             ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", file], ct);
@@ -148,7 +175,9 @@ public static class Exporter
 
         var problems = new List<string>();
         if (decodeErr.Length > 0) problems.Add(Loc.T("verify.decodeFail"));
-        if (w * 9 != h * 16 && Math.Abs(w / (double)h - 16.0 / 9) > 0.002) problems.Add(Loc.F("verify.not169", w, h));
+        bool vertical = format != ExportFormat.Landscape;
+        double want = vertical ? 9.0 / 16 : 16.0 / 9;
+        if (h == 0 || Math.Abs(w / (double)h - want) > 0.002) problems.Add(Loc.F("verify.wrongAspect", w, h, vertical ? "9:16" : "16:9"));
         if (!hasAudio) problems.Add(Loc.T("verify.noAudio"));
         if (hasAudio && Math.Abs(vStart - aStart) > 0.05) problems.Add(Loc.F("verify.startDiff", Math.Abs(vStart - aStart) * 1000));
         if (hasAudio && Math.Abs(vDur - aDur) > 0.1) problems.Add(Loc.F("verify.lenDiff", Math.Abs(vDur - aDur) * 1000));
@@ -165,9 +194,10 @@ public static class Exporter
 
     private static void TryDelete(string f) { try { if (File.Exists(f)) File.Delete(f); } catch { } }
 
-    public static string SuggestName(MediaInfo info, int index, double start, double end)
+    public static string SuggestName(MediaInfo info, int index, double start, double end, ExportFormat format = ExportFormat.Landscape)
     {
         var baseName = Path.GetFileNameWithoutExtension(info.Path);
-        return $"{baseName}_{Loc.T("file.highlight")}{index}_{TimeFmt.Hms(start).Replace(':', '-')}-{TimeFmt.Hms(end).Replace(':', '-')}.mp4";
+        var shape = format == ExportFormat.Landscape ? "" : "_9x16";
+        return $"{baseName}_{Loc.T("file.highlight")}{index}_{TimeFmt.Hms(start).Replace(':', '-')}-{TimeFmt.Hms(end).Replace(':', '-')}{shape}.mp4";
     }
 }
