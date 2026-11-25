@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ApexHighlighter.Core/ApexHighlighter.Core.csproj" />
+    <Project Path="src/ApexHighlighter.App/ApexHighlighter.App.csproj" />
+    <Project Path="src/ApexHighlighter.Cli/ApexHighlighter.Cli.csproj" />
+  </Folder>
+</Solution>

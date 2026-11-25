@@ -1,0 +1,16 @@
+# 組建產物
+bin/
+obj/
+*.user
+.vs/
+.vscode/
+.idea/
+
+# 匯出過程的暫存檔
+*.part.mp4
+
+# 影片不進版本控制
+*.mp4
+*.mkv
+*.mov
+*.flv
