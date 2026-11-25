@@ -3,8 +3,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
@@ -19,9 +19,22 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private MediaInfo? _info;
     private CancellationTokenSource? _cts;
-    private bool _playing, _dragging, _updatingSlider;
+    private bool _playing, _dragging, _updatingSlider, _previewUnsupported;
     private double? _stopAt;
     private KeywordConfig? _cfg;
+    // The list hint depends on state, so remember which one is showing and re-render it when the language changes.
+    private string _hintKey = "hint.initial";
+    private object?[] _hintArgs = [];
+
+    // Game language found by the last scan (null = not scanned yet). Always detected automatically.
+    private string? _detectedGameLang;
+    private bool _gameLangSure;
+
+    /// <summary>Native names for the game-language list (keywords.json ids).</summary>
+    private static readonly Dictionary<string, string> GameLanguageNames = new()
+    {
+        ["en"] = "English", ["zh-Hant"] = "繁體中文", ["zh-Hans"] = "简体中文", ["ja"] = "日本語", ["de"] = "Deutsch",
+    };
 
     public MainWindow()
     {
@@ -32,6 +45,8 @@ public partial class MainWindow : Window
             if (e.NewItems != null)
                 foreach (ClipItem c in e.NewItems)
                     c.PropertyChanged += (_, a) => { if (a.PropertyName == nameof(ClipItem.Keep)) { DrawMarkers(); UpdateButtons(); } };
+            if (e.OldItems != null)
+                foreach (ClipItem c in e.OldItems) c.Detach();
             Renumber(); DrawMarkers(); UpdateButtons();
         };
         _timer.Tick += Timer_Tick;
@@ -39,19 +54,17 @@ public partial class MainWindow : Window
 
         OutDirBox.Text = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Apex精華");
 
-        LanguageBox.Items.Add("自動");
-        try
-        {
-            _cfg = KeywordConfig.Load();
-            foreach (var l in _cfg.Languages) LanguageBox.Items.Add(l.Id);
-        }
-        catch (Exception ex) { Log("讀不到 keywords.json：" + ex.Message); }
-        LanguageBox.SelectedIndex = 0;
+        try { _cfg = KeywordConfig.Load(); }
+        catch (Exception ex) { Log(Loc.F("log.keywordsFail", ex.Message)); }
 
-        if (FFmpegLocator.TryFind(out var dir)) Log($"FFmpeg：{dir}");
-        else Log("找不到 FFmpeg。請執行 winget install Gyan.FFmpeg，或把 ffmpeg.exe、ffprobe.exe 放到程式資料夾的 ffmpeg 子資料夾。");
-        Log("OCR 語言（Windows 內建）：" + string.Join("、", SafeOcrLanguages()));
+        if (FFmpegLocator.TryFind(out var dir)) Log(Loc.F("log.ffmpeg", dir));
+        else Log(Loc.T("err.ffmpegMissing"));
+        Log(Loc.F("log.ocrLangs", string.Join(Loc.T("list.sep"), SafeOcrLanguages())));
         SizeChanged += (_, _) => DrawMarkers();
+
+        Loc.Changed += OnLanguageChanged;
+        Closed += (_, _) => Loc.Changed -= OnLanguageChanged;
+        ApplyLanguage();
 
         var args = Environment.GetCommandLineArgs();
         if (args.Length > 1 && File.Exists(args[1])) Loaded += async (_, _) => await OpenFileAsync(args[1]);
@@ -59,7 +72,62 @@ public partial class MainWindow : Window
 
     private static IEnumerable<string> SafeOcrLanguages()
     {
-        try { return OcrReader.InstalledLanguages(); } catch { return ["（無法取得）"]; }
+        try { return OcrReader.InstalledLanguages(); } catch { return [Loc.T("log.ocrUnknown")]; }
+    }
+
+    // ───────────── Language ─────────────
+
+    private void Settings_Click(object sender, RoutedEventArgs e) => new SettingsWindow { Owner = this }.ShowDialog();
+
+    private void OnLanguageChanged()
+    {
+        ApplyLanguage();
+        Log(Loc.F("log.uiLang", Loc.Languages.First(l => l.Code == Loc.Current).NativeName));
+    }
+
+    /// <summary>Re-renders the texts that are built in code (XAML texts update through bindings).</summary>
+    private void ApplyLanguage()
+    {
+        // Tells WPF which glyph variants to use (CJK characters differ between Chinese and Japanese fonts).
+        Language = XmlLanguage.GetLanguage(Loc.Current switch { "zh-Hant" => "zh-TW", "ja" => "ja-JP", _ => "en-US" });
+
+        GameLangText.Text = _detectedGameLang == null ? Loc.T("game.auto")
+            : Loc.F(_gameLangSure ? "game.detected" : "game.uncertain", GameLanguageNames.GetValueOrDefault(_detectedGameLang, _detectedGameLang));
+
+        if (_info == null) FileText.Text = Loc.T("file.none");
+        else
+        {
+            int track = AudioBox.SelectedIndex;
+            FillAudioTracks(_info);
+            AudioBox.SelectedIndex = track;
+            ExportInfo.Text = DescribeCanvas(_info);
+        }
+        ListHint.Text = Loc.F(_hintKey, _hintArgs);
+        PlayButton.Content = Loc.T(_playing ? "player.pause" : "player.play");
+        if (_previewUnsupported) PlayerHint.Text = Loc.T("player.unsupported");
+        DrawMarkers();
+    }
+
+    private void FillAudioTracks(MediaInfo info)
+    {
+        AudioBox.Items.Clear();
+        foreach (var t in info.AudioTracks)
+            AudioBox.Items.Add(t + (t.MeanVolumeDb is { } v ? $"  {v:0} dB" : ""));
+        if (info.AudioTracks.Count == 0) AudioBox.Items.Add(Loc.T("exp.noTracks"));
+    }
+
+    private static string DescribeCanvas(MediaInfo info)
+    {
+        var (cw, ch) = Exporter.Canvas(info.Width, info.Height);
+        return cw == info.Width && ch == info.Height
+            ? Loc.F("exp.native", cw, ch)
+            : Loc.F("exp.padded", cw, ch, info.Width, info.Height);
+    }
+
+    private void SetHint(string key, params object?[] args)
+    {
+        _hintKey = key; _hintArgs = args;
+        ListHint.Text = Loc.F(key, args);
     }
 
     // ───────────── Import ─────────────
@@ -68,8 +136,8 @@ public partial class MainWindow : Window
     {
         var dlg = new OpenFileDialog
         {
-            Title = "選擇一場 Apex 錄影",
-            Filter = "錄影檔 (*.mkv;*.mp4;*.mov;*.flv)|*.mkv;*.mp4;*.mov;*.flv|所有檔案|*.*",
+            Title = Loc.T("dlg.openTitle"),
+            Filter = Loc.T("dlg.filter"),
             InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
         };
         if (dlg.ShowDialog(this) == true) await OpenFileAsync(dlg.FileName);
@@ -82,42 +150,39 @@ public partial class MainWindow : Window
 
     private async Task OpenFileAsync(string path)
     {
-        if (_cts != null) { MessageBox.Show(this, "請先等目前的工作結束或按取消。", Title); return; }
+        if (_cts != null) { MessageBox.Show(this, Loc.T("msg.busy"), Title); return; }
         try
         {
-            SetBusy(true, "讀取檔案資訊…");
+            SetBusy(true, Loc.T("st.reading"));
             using var cts = new CancellationTokenSource();
             var info = await MediaInfo.ProbeAsync(path, cts.Token);
             info = await info.WithTrackVolumesAsync(cts.Token);
             _info = info;
             _clips.Clear();
+            _detectedGameLang = null;
+            GameLangText.Text = Loc.T("game.auto");
             FileText.Text = $"{System.IO.Path.GetFileName(path)}　{info.Width}×{info.Height}　{info.Fps:0.##} fps　{TimeFmt.Hms(info.Duration)}";
             FileText.ToolTip = path;
 
-            AudioBox.Items.Clear();
-            foreach (var t in info.AudioTracks)
-                AudioBox.Items.Add(t + (t.MeanVolumeDb is { } v ? $"  {v:0} dB" : ""));
-            if (info.AudioTracks.Count == 0) AudioBox.Items.Add("（沒有音軌）");
+            FillAudioTracks(info);
             AudioBox.SelectedIndex = Math.Max(0, info.DefaultAudioTrack());
+            ExportInfo.Text = DescribeCanvas(info);
 
-            var (cw, ch) = Exporter.Canvas(info.Width, info.Height);
-            ExportInfo.Text = cw == info.Width && ch == info.Height
-                ? $"輸出 {cw}×{ch}（原尺寸，16:9）"
-                : $"輸出 {cw}×{ch}（原畫面 {info.Width}×{info.Height} 置中補黑邊成 16:9，不裁切不拉伸）";
-
+            _previewUnsupported = false;
             Player.Source = new Uri(path);
             Player.Play(); Player.Pause();
             _playing = false;
+            PlayButton.Content = Loc.T("player.play");
             PlayerHint.Visibility = Visibility.Collapsed;
-            Log($"已匯入：{path}（{info.Width}×{info.Height}、{TimeFmt.Hms(info.Duration)}、音軌 {info.AudioTracks.Count} 條）。原始檔只讀取，不會被修改。");
-            ListHint.Text = "按「掃描精華」自動找交戰，或用播放器找到位置後按「＋ 在目前位置新增」。";
-            SetBusy(false, "就緒");
+            Log(Loc.F("log.imported", path, info.Width, info.Height, TimeFmt.Hms(info.Duration), info.AudioTracks.Count));
+            SetHint("hint.imported");
+            SetBusy(false, Loc.T("st.ready"));
         }
         catch (Exception ex)
         {
-            SetBusy(false, "匯入失敗");
-            Log("匯入失敗：" + ex.Message);
-            MessageBox.Show(this, ex.Message, "匯入失敗", MessageBoxButton.OK, MessageBoxImage.Error);
+            SetBusy(false, Loc.T("st.importFailed"));
+            Log(Loc.F("log.importFailed", ex.Message));
+            MessageBox.Show(this, ex.Message, Loc.T("st.importFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -128,49 +193,46 @@ public partial class MainWindow : Window
         if (_info == null || _cfg == null) return;
         var opt = new ScanOptions
         {
-            Language = LanguageBox.SelectedIndex <= 0 ? "auto" : (string)LanguageBox.SelectedItem,
+            Language = "auto",
             AudioTrack = Math.Max(0, AudioBox.SelectedIndex),
         };
         _cts = new CancellationTokenSource();
-        SetBusy(true, "掃描中…");
+        SetBusy(true, Loc.T("st.scanning"));
         PausePlayer();
         var progress = new Progress<ScanProgress>(p => { Progress.Value = p.Fraction; StatusText.Text = p.Message; });
         try
         {
-            Log($"開始掃描（每秒 {opt.SampleFps} 張、OCR 寬 {opt.OcrWidth}px、{opt.Workers} 執行緒、語言 {opt.Language}）…");
+            Log(Loc.F("log.scanStart", opt.SampleFps, opt.OcrWidth, opt.Workers, opt.Language));
             var result = await Task.Run(() => new Scanner(_cfg).ScanAsync(_info, opt, progress, _cts.Token));
             string reportPath = "";
-            try { reportPath = ScanReport.Save(result).Text; } catch (Exception ex) { Log("報告存檔失敗：" + ex.Message); }
+            try { reportPath = ScanReport.Save(result).Text; } catch (Exception ex) { Log(Loc.F("log.reportFail", ex.Message)); }
 
             foreach (var c in _clips.Where(c => c.IsAuto).ToList()) _clips.Remove(c);
-            int idx = 0;
-            foreach (var c in result.Candidates)
-            {
-                var times = string.Join("、", c.Events.Select(ev => $"{TimeFmt.Hms(ev.Time)} {ev.Kind.Zh()}"));
-                _clips.Insert(idx++, new ClipItem(c.Start, c.End, c.Reason, $"分數 {c.Score:0.0}｜{times}｜{c.StartNote}", true));
-            }
+            foreach (var c in result.Candidates) _clips.Add(ClipItem.FromCandidate(c));
             SortClips();
 
-            Log($"掃描完成：耗時 {result.ScanSeconds:0.0} 秒（{(result.ScanSeconds > 0 ? result.Duration / result.ScanSeconds : 0):0.0} 倍速），語言 {result.Language}（OCR {result.OcrLanguage}）。");
+            _detectedGameLang = result.Language;
+            _gameLangSure = result.LanguageConfident;
+            ApplyLanguage();
+            Log(Loc.F("log.scanDone", result.ScanSeconds, result.ScanSeconds > 0 ? result.Duration / result.ScanSeconds : 0, result.Language, result.OcrLanguage));
             if (result.PromptPosition != null) Log(result.PromptPosition);
-            foreach (var n in result.Notes) Log("備註：" + n);
-            Log($"讀到 {result.Events.Count} 個提示，合併成 {result.Clusters.Count} 波交戰，建議 {result.Candidates.Count} 段。");
+            foreach (var n in result.Notes) Log(Loc.F("rep.note", n));
+            Log(Loc.F("log.summary", result.Events.Count, result.Clusters.Count, result.Candidates.Count));
             foreach (var c in result.Clusters.Where(c => !c.Accepted))
-                Log($"  略過 {TimeFmt.Hms(c.Start)}–{TimeFmt.Hms(c.End)}：{c.RejectReason}");
-            if (reportPath.Length > 0) Log("完整記錄（含每個 OCR 命中，方便檢查誤判）：" + reportPath);
+                Log(Loc.F("log.skipped", TimeFmt.Hms(c.Start), TimeFmt.Hms(c.End), c.RejectReason));
+            if (reportPath.Length > 0) Log(Loc.F("log.report", reportPath));
 
-            ListHint.Text = result.Candidates.Count == 0
-                ? "這場沒有找到夠確定的精華（沒有硬湊）。可以用播放器手動新增。"
-                : $"找到 {result.Candidates.Count} 段。取消勾選＝跳過；選取後可微調起訖。";
-            SetBusy(false, $"掃描完成，{result.Candidates.Count} 段候選");
+            if (result.Candidates.Count == 0) SetHint("hint.none");
+            else SetHint("hint.found", result.Candidates.Count);
+            SetBusy(false, Loc.F("st.scanDone", result.Candidates.Count));
             if (_clips.Count > 0) ClipList.SelectedIndex = 0;
         }
-        catch (OperationCanceledException) { SetBusy(false, "已取消"); Log("掃描已取消。"); }
+        catch (OperationCanceledException) { SetBusy(false, Loc.T("st.cancelled")); Log(Loc.T("log.scanCancelled")); }
         catch (Exception ex)
         {
-            SetBusy(false, "掃描失敗");
-            Log("掃描失敗：" + ex.Message);
-            MessageBox.Show(this, ex.Message, "掃描失敗", MessageBoxButton.OK, MessageBoxImage.Error);
+            SetBusy(false, Loc.T("st.scanFailed"));
+            Log(Loc.F("log.scanFailed", ex.Message));
+            MessageBox.Show(this, ex.Message, Loc.T("st.scanFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally { _cts?.Dispose(); _cts = null; UpdateButtons(); }
     }
@@ -183,22 +245,22 @@ public partial class MainWindow : Window
     {
         if (_info == null) return;
         var items = _clips.Where(c => c.Keep).ToList();
-        if (items.Count == 0) { MessageBox.Show(this, "沒有勾選任何片段。", Title); return; }
+        if (items.Count == 0) { MessageBox.Show(this, Loc.T("msg.noneTicked"), Title); return; }
         var bad = items.FirstOrDefault(c => c.End - c.Start < 1);
-        if (bad != null) { MessageBox.Show(this, $"片段 #{bad.Number} 太短或起訖顛倒。", Title); return; }
+        if (bad != null) { MessageBox.Show(this, Loc.F("msg.tooShort", bad.Number), Title); return; }
 
         var outDir = OutDirBox.Text.Trim();
         try { Directory.CreateDirectory(outDir); }
-        catch (Exception ex) { MessageBox.Show(this, "無法建立輸出資料夾：" + ex.Message, Title); return; }
+        catch (Exception ex) { MessageBox.Show(this, Loc.F("msg.cantCreateDir", ex.Message), Title); return; }
 
         var opt = new ExportOptions { AudioTrack = Math.Max(0, AudioBox.SelectedIndex) };
         _cts = new CancellationTokenSource();
-        SetBusy(true, "匯出中…");
+        SetBusy(true, Loc.T("st.exporting"));
         PausePlayer();
         try
         {
             bool nvenc = await Exporter.NvencAvailableAsync(_cts.Token);
-            Log($"開始匯出 {items.Count} 段（編碼器：{(nvenc ? "NVIDIA NVENC" : "x264 CPU")}，音軌 {opt.AudioTrack + 1}）…");
+            Log(Loc.F("log.exportStart", items.Count, Loc.T(nvenc ? "exp.encNvenc" : "exp.encX264"), opt.AudioTrack + 1));
             int i = 0;
             foreach (var c in items)
             {
@@ -209,25 +271,30 @@ public partial class MainWindow : Window
                 var prog = new Progress<double>(p =>
                 {
                     Progress.Value = ((idx - 1) + p) / items.Count;
-                    StatusText.Text = $"匯出 {idx}/{items.Count}：{p:P0}";
+                    StatusText.Text = Loc.F("st.exportProgress", idx, items.Count, p);
                 });
                 var sw = Stopwatch.StartNew();
-                c.Status = "匯出中…";
+                c.SetStatus(ClipStatus.Exporting);
                 var file = await Task.Run(() => Exporter.ExportAsync(_info, c.Start, c.End, outPath, opt, prog, _cts.Token));
-                StatusText.Text = $"檢查 {idx}/{items.Count}（完整解碼、音畫對齊）…";
+                StatusText.Text = Loc.F("st.checking", idx, items.Count);
                 var check = await Task.Run(() => Exporter.VerifyAsync(file, c.End - c.Start, _cts.Token));
-                c.Status = (check.Ok ? "✔ " : "⚠ ") + System.IO.Path.GetFileName(file);
-                Log($"#{c.Number} → {file}（{sw.Elapsed.TotalSeconds:0.0} 秒）　{check.Summary}");
+                c.SetStatus(check.Ok ? ClipStatus.Done : ClipStatus.Problem, System.IO.Path.GetFileName(file));
+                Log(Loc.F("log.exportOne", c.Number, file, sw.Elapsed.TotalSeconds, check.Summary));
             }
-            SetBusy(false, $"匯出完成：{items.Count} 段");
-            Log($"匯出完成，檔案在 {outDir}");
+            SetBusy(false, Loc.F("st.exportDone", items.Count));
+            Log(Loc.F("log.exportDone", outDir));
         }
-        catch (OperationCanceledException) { SetBusy(false, "已取消"); Log("匯出已取消，未完成的檔案已刪除。"); }
+        catch (OperationCanceledException)
+        {
+            foreach (var c in items.Where(c => c.Status == Loc.T("clip.exporting"))) c.SetStatus(ClipStatus.None);
+            SetBusy(false, Loc.T("st.cancelled"));
+            Log(Loc.T("log.exportCancelled"));
+        }
         catch (Exception ex)
         {
-            SetBusy(false, "匯出失敗");
-            Log("匯出失敗：" + ex.Message);
-            MessageBox.Show(this, ex.Message, "匯出失敗", MessageBoxButton.OK, MessageBoxImage.Error);
+            SetBusy(false, Loc.T("st.exportFailed"));
+            Log(Loc.F("log.exportFailed", ex.Message));
+            MessageBox.Show(this, ex.Message, Loc.T("st.exportFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally { _cts?.Dispose(); _cts = null; UpdateButtons(); }
     }
@@ -246,7 +313,7 @@ public partial class MainWindow : Window
 
     private void BrowseOut_Click(object sender, RoutedEventArgs e)
     {
-        var dlg = new OpenFolderDialog { Title = "選擇輸出資料夾", InitialDirectory = Directory.Exists(OutDirBox.Text) ? OutDirBox.Text : null };
+        var dlg = new OpenFolderDialog { Title = Loc.T("dlg.folderTitle"), InitialDirectory = Directory.Exists(OutDirBox.Text) ? OutDirBox.Text : null };
         if (dlg.ShowDialog(this) == true) OutDirBox.Text = dlg.FolderName;
     }
 
@@ -265,9 +332,7 @@ public partial class MainWindow : Window
     {
         if (_info == null) return;
         var pos = Player.Position.TotalSeconds;
-        var start = Math.Max(0, pos - 15);
-        var end = Math.Min(_info.Duration, pos + 15);
-        var c = new ClipItem(start, end, "手動新增", $"以 {TimeFmt.Hms(pos)} 為中心，前後各 15 秒，請再微調", false);
+        var c = ClipItem.Manual(Math.Max(0, pos - 15), Math.Min(_info.Duration, pos + 15), pos);
         _clips.Add(c);
         SortClips();
         ClipList.SelectedItem = c;
@@ -392,9 +457,10 @@ public partial class MainWindow : Window
 
     private void Player_MediaFailed(object? sender, ExceptionRoutedEventArgs e)
     {
-        PlayerHint.Text = "這個格式無法在預覽播放器播放（仍可掃描與匯出）";
+        _previewUnsupported = true;
+        PlayerHint.Text = Loc.T("player.unsupported");
         PlayerHint.Visibility = Visibility.Visible;
-        Log("預覽播放失敗：" + e.ErrorException?.Message);
+        Log(Loc.F("log.previewFailed", e.ErrorException?.Message));
     }
 
     private void Player_MediaEnded(object sender, RoutedEventArgs e) => PausePlayer();
@@ -402,7 +468,7 @@ public partial class MainWindow : Window
     private void PlayPause_Click(object sender, RoutedEventArgs e)
     {
         if (_playing) PausePlayer();
-        else { _stopAt = null; Player.Play(); _playing = true; PlayButton.Content = "❚❚ 暫停"; }
+        else { _stopAt = null; Player.Play(); _playing = true; PlayButton.Content = Loc.T("player.pause"); }
     }
 
     private void PlayRange(double from, double to)
@@ -411,7 +477,7 @@ public partial class MainWindow : Window
         _stopAt = to;
         Player.Play();
         _playing = true;
-        PlayButton.Content = "❚❚ 暫停";
+        PlayButton.Content = Loc.T("player.pause");
     }
 
     private void PausePlayer()
@@ -419,7 +485,7 @@ public partial class MainWindow : Window
         Player.Pause();
         _playing = false;
         _stopAt = null;
-        PlayButton.Content = "▶ 播放";
+        PlayButton.Content = Loc.T("player.play");
     }
 
     private void SeekTo(double s)

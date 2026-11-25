@@ -31,11 +31,11 @@ public static class Exporter
     public static async Task<string> ExportAsync(MediaInfo info, double start, double end, string output, ExportOptions opt,
         IProgress<double>? progress, CancellationToken ct)
     {
-        if (end <= start) throw new ArgumentException("結束時間必須晚於開始時間。");
+        if (end <= start) throw new ArgumentException(Loc.T("err.endBeforeStart"));
         var src = Path.GetFullPath(info.Path);
         var dst = Path.GetFullPath(output);
         if (string.Equals(src, dst, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("輸出檔不能覆蓋原始錄影。");
+            throw new InvalidOperationException(Loc.T("err.overwriteSource"));
         Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
 
         var (cw, ch) = Canvas(info.Width, info.Height);
@@ -104,7 +104,7 @@ public static class Exporter
         if (p.ExitCode != 0)
         {
             TryDelete(output);
-            throw new InvalidOperationException($"匯出失敗（{encoder}）：{FFmpegLocator.Tail(err, 1200)}");
+            throw new InvalidOperationException(Loc.F("err.exportFailed", encoder, FFmpegLocator.Tail(err, 1200)));
         }
         progress?.Report(1);
     }
@@ -147,16 +147,16 @@ public static class Exporter
         catch (InvalidOperationException ex) { decodeErr = ex.Message; }
 
         var problems = new List<string>();
-        if (decodeErr.Length > 0) problems.Add("完整解碼失敗");
-        if (w * 9 != h * 16 && Math.Abs(w / (double)h - 16.0 / 9) > 0.002) problems.Add($"畫面不是 16:9（{w}x{h}）");
-        if (!hasAudio) problems.Add("沒有音訊");
-        if (hasAudio && Math.Abs(vStart - aStart) > 0.05) problems.Add($"音訊與畫面起點差 {Math.Abs(vStart - aStart) * 1000:0} ms");
-        if (hasAudio && Math.Abs(vDur - aDur) > 0.1) problems.Add($"音訊與畫面長度差 {Math.Abs(vDur - aDur) * 1000:0} ms");
-        if (Math.Abs(fmtDur - expectedDuration) > 0.5) problems.Add($"長度 {fmtDur:0.00}s 與預期 {expectedDuration:0.00}s 不符");
+        if (decodeErr.Length > 0) problems.Add(Loc.T("verify.decodeFail"));
+        if (w * 9 != h * 16 && Math.Abs(w / (double)h - 16.0 / 9) > 0.002) problems.Add(Loc.F("verify.not169", w, h));
+        if (!hasAudio) problems.Add(Loc.T("verify.noAudio"));
+        if (hasAudio && Math.Abs(vStart - aStart) > 0.05) problems.Add(Loc.F("verify.startDiff", Math.Abs(vStart - aStart) * 1000));
+        if (hasAudio && Math.Abs(vDur - aDur) > 0.1) problems.Add(Loc.F("verify.lenDiff", Math.Abs(vDur - aDur) * 1000));
+        if (Math.Abs(fmtDur - expectedDuration) > 0.5) problems.Add(Loc.F("verify.durMismatch", fmtDur, expectedDuration));
 
         var summary = problems.Count == 0
-            ? $"OK：{w}x{h}，長度 {fmtDur:0.00}s，影/音起點差 {Math.Abs(vStart - aStart) * 1000:0} ms，長度差 {Math.Abs(vDur - aDur) * 1000:0} ms，完整解碼無錯誤"
-            : "問題：" + string.Join("；", problems);
+            ? Loc.F("verify.ok", w, h, fmtDur, Math.Abs(vStart - aStart) * 1000, Math.Abs(vDur - aDur) * 1000)
+            : Loc.F("verify.problems", string.Join(Loc.T("verify.sep"), problems));
         return new ExportCheck(problems.Count == 0, fmtDur, vDur, aDur, vStart, aStart, w, h, summary);
     }
 
@@ -168,6 +168,6 @@ public static class Exporter
     public static string SuggestName(MediaInfo info, int index, double start, double end)
     {
         var baseName = Path.GetFileNameWithoutExtension(info.Path);
-        return $"{baseName}_精華{index}_{TimeFmt.Hms(start).Replace(':', '-')}-{TimeFmt.Hms(end).Replace(':', '-')}.mp4";
+        return $"{baseName}_{Loc.T("file.highlight")}{index}_{TimeFmt.Hms(start).Replace(':', '-')}-{TimeFmt.Hms(end).Replace(':', '-')}.mp4";
     }
 }

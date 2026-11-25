@@ -6,6 +6,9 @@ public sealed record PromptHit(double Time, EventKind Kind, string Text, string 
 /// <summary>A deduplicated on-screen prompt (the same prompt stays up for ~2–3 s and spans several samples).</summary>
 public sealed record GameEvent(double Time, double LastSeen, EventKind Kind, string Text, int Samples);
 
+public enum RejectKind { None, LowScore, AssistOnly, NotTopN }
+
+/// <summary>One fight. Text properties are computed in the current interface language.</summary>
 public sealed class Candidate
 {
     public double Start { get; set; }
@@ -14,10 +17,29 @@ public sealed class Candidate
     public double LastEvent { get; init; }
     public double Score { get; init; }
     public List<GameEvent> Events { get; init; } = [];
-    public string Reason { get; init; } = "";
-    public string StartNote { get; init; } = "";
-    public bool Accepted { get; init; }
-    public string? RejectReason { get; init; }
+    /// <summary>Seconds between clip start and the first prompt.</summary>
+    public double LeadIn { get; init; }
+    public bool LeadInFromAudio { get; init; }
+    public RejectKind Reject { get; init; }
+    public double Threshold { get; init; }
+    public int TopN { get; init; }
+
+    public bool Accepted => Reject == RejectKind.None;
+    public string Reason => DescribeEvents(Events);
+    public string StartNote => Loc.F(LeadInFromAudio ? "start.audio" : "start.fixed", LeadIn);
+
+    public string? RejectReason => Reject switch
+    {
+        RejectKind.LowScore => Loc.F("reject.lowScore", Score, Threshold, Reason),
+        RejectKind.AssistOnly => Loc.F("reject.assistOnly", Reason),
+        RejectKind.NotTopN => Loc.F("reject.notTop", Score, TopN),
+        _ => null,
+    };
+
+    /// <summary>"Knock ×2, Elimination" in the current language.</summary>
+    public static string DescribeEvents(IEnumerable<GameEvent> events) =>
+        string.Join(Loc.T("list.sep"), events.GroupBy(e => e.Kind).OrderBy(k => k.Key)
+            .Select(k => k.Count() > 1 ? $"{k.Key.Name()} ×{k.Count()}" : k.Key.Name()));
 }
 
 public sealed class ScanOptions
@@ -58,8 +80,13 @@ public sealed class ScanResult
     public int FramesScanned { get; set; }
     public string? Language { get; set; }
     public string? OcrLanguage { get; set; }
+    /// <summary>False when the match had too few prompts/HUD text to be sure which game language it is.</summary>
+    public bool LanguageConfident { get; set; }
     public bool LanguageVerified { get; set; }
-    public string? PromptPosition { get; set; }
+    /// <summary>Median center of knock/elimination prompts, as a fraction of the frame (null if none were seen).</summary>
+    public double? PromptX { get; set; }
+    public double? PromptY { get; set; }
+    public string? PromptPosition => PromptX is { } x && PromptY is { } y ? Loc.F("position", x, y) : null;
     public int SpectatingFramesSkipped { get; set; }
     public List<PromptHit> Hits { get; set; } = [];
     public List<GameEvent> Events { get; set; } = [];

@@ -9,16 +9,8 @@ public enum EventKind { Knock, Elimination, SquadWipe, KillLeader, Champion, Ass
 
 public static class EventKindText
 {
-    public static string Zh(this EventKind k) => k switch
-    {
-        EventKind.Knock => "擊倒",
-        EventKind.Elimination => "淘汰",
-        EventKind.SquadWipe => "全隊淘汰",
-        EventKind.KillLeader => "成為擊殺王",
-        EventKind.Champion => "冠軍",
-        EventKind.Assist => "助攻",
-        _ => k.ToString(),
-    };
+    /// <summary>Localized name of the event, in the current interface language.</summary>
+    public static string Name(this EventKind k) => Loc.T("kind." + k);
 }
 
 public sealed class KeywordRule
@@ -63,7 +55,7 @@ public sealed class KeywordConfig
     {
         path ??= Path.Combine(AppContext.BaseDirectory, "keywords.json");
         var cfg = JsonSerializer.Deserialize<KeywordConfig>(File.ReadAllText(path), Opts)
-                  ?? throw new InvalidDataException("keywords.json 格式錯誤");
+                  ?? throw new InvalidDataException(Loc.T("err.keywordsBad"));
         return cfg;
     }
 

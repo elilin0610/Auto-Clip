@@ -23,7 +23,7 @@ public sealed class Scanner
 
         var pairs = BuildPairs(opt.Language, result.Notes);
         if (pairs.Count == 0)
-            throw new InvalidOperationException("找不到可用的 OCR 語言。請在 Windows 設定 > 語言 安裝英文或中文語言包（含 OCR）。");
+            throw new InvalidOperationException(Loc.T("err.noOcr"));
 
         var audioTask = AudioActivity.AnalyzeAsync(info, opt.AudioTrack, ct);
 
@@ -84,7 +84,8 @@ public sealed class Scanner
                     progress?.Report(new ScanProgress
                     {
                         Fraction = Math.Min(1, framesDone / (double)totalFrames),
-                        Message = $"掃描中 {TimeFmt.Hms(f.Time)} / {TimeFmt.Hms(info.Duration)}" + (locked != null ? $"（語言：{locked.Matcher.LanguageId}）" : "（判斷遊戲語言中）"),
+                        Message = Loc.F("progress.scanning", TimeFmt.Hms(f.Time), TimeFmt.Hms(info.Duration))
+                                  + (locked != null ? Loc.F("progress.lang", locked.Matcher.LanguageId) : Loc.T("progress.detecting")),
                     });
                 }
             }
@@ -106,24 +107,25 @@ public sealed class Scanner
         var winner = locked ?? pairs.OrderByDescending(p => hitCount[p.Key]).ThenByDescending(p => p.Native).First();
         result.Language = winner.Matcher.LanguageId;
         result.OcrLanguage = winner.OcrTag;
+        result.LanguageConfident = locked != null || pairs.Count == 1;
         result.LanguageVerified = _cfg.Languages.First(l => l.Id == winner.Matcher.LanguageId).Verified;
         if (locked == null && pairs.Count > 1)
-            result.Notes.Add($"畫面上讀不到足夠的提示或 HUD 文字，無法確定遊戲語言；暫用 {winner.Matcher.LanguageId}（命中 {hitCount[winner.Key]} 次）。");
+            result.Notes.Add(Loc.F("note.langUncertain", winner.Matcher.LanguageId, hitCount[winner.Key]));
         if (!result.LanguageVerified)
-            result.Notes.Add($"「{winner.Matcher.LanguageId}」的關鍵字還沒用實際錄影確認過，結果請多看一眼，必要時修改 keywords.json。");
+            result.Notes.Add(Loc.F("note.langUnverified", winner.Matcher.LanguageId));
 
         var mine = collected.Where(c => c.PairKey == winner.Key).OrderBy(c => c.Time).ToList();
         result.SpectatingFramesSkipped = mine.Count(m => m.Spectating);
         result.Hits = mine.Where(m => !m.Spectating).SelectMany(m => m.Hits).OrderBy(h => h.Time).ToList();
-        result.PromptPosition = DescribePosition(result.Hits);
+        if (MedianPosition(result.Hits) is { } pos) { result.PromptX = pos.X; result.PromptY = pos.Y; }
 
         result.Events = Deduplicate(result.Hits, opt.SampleFps);
 
-        progress?.Report(new ScanProgress { Fraction = 1, Message = "分析音量、合併交戰…" });
+        progress?.Report(new ScanProgress { Fraction = 1, Message = Loc.T("progress.merging") });
         AudioActivity? audio = null;
         try { audio = await audioTask; }
         catch (OperationCanceledException) { throw; }
-        catch (Exception ex) { result.Notes.Add("音量分析失敗，片頭改用固定前置秒數：" + ex.Message); }
+        catch (Exception ex) { result.Notes.Add(Loc.F("note.audioFailed", ex.Message)); }
 
         result.Clusters = Cluster(result.Events, audio, info.Duration, opt);
         result.Candidates = result.Clusters.Where(c => c.Accepted).ToList();
@@ -135,7 +137,7 @@ public sealed class Scanner
     {
         var installed = OcrReader.InstalledLanguages();
         var langs = language == "auto" ? _cfg.Languages : _cfg.Languages.Where(l => l.Id == language).ToList();
-        if (langs.Count == 0) throw new ArgumentException($"keywords.json 裡沒有語言 {language}");
+        if (langs.Count == 0) throw new ArgumentException(Loc.F("err.langMissing", language));
 
         var pairs = new List<Pair>();
         foreach (var l in langs)
@@ -152,11 +154,11 @@ public sealed class Scanner
                 // Latin-script rules can still be read by any installed engine.
                 var fallback = installed.FirstOrDefault(i => i.StartsWith("en", StringComparison.OrdinalIgnoreCase)) ?? installed.FirstOrDefault();
                 if (fallback != null) pairs.Add(new Pair($"{l.Id}@{fallback}", fallback, matcher, false));
-                if (language != "auto") notes.Add($"系統沒有安裝 {l.Id} 的 OCR 語言，改用 {fallback} 引擎讀取。");
+                if (language != "auto") notes.Add(Loc.F("note.ocrFallback", l.Id, fallback));
             }
         }
         if (language == "auto")
-            notes.Add("可用的 OCR 語言：" + string.Join("、", installed) + "；自動判斷遊戲語言。");
+            notes.Add(Loc.F("note.ocrAvailable", string.Join(Loc.T("list.sep"), installed)));
         return pairs;
     }
 
@@ -211,34 +213,21 @@ public sealed class Scanner
                 score += _cfg.Weight(e.Kind) * (e.Samples >= 2 ? 1.0 : 0.5);
 
             double first = g[0].Time, last = g.Max(e => e.LastSeen);
-            double start;
-            string startNote;
-            if (audio != null)
-            {
-                start = audio.EstimateFightStart(first, opt.MinPreRoll, opt.MaxPreRoll);
-                startNote = $"依音量往前抓 {first - start:0} 秒";
-            }
-            else
-            {
-                start = Math.Max(0, first - (opt.MinPreRoll + opt.MaxPreRoll) / 2);
-                startNote = $"固定往前 {first - start:0} 秒";
-            }
+            double start = audio != null
+                ? audio.EstimateFightStart(first, opt.MinPreRoll, opt.MaxPreRoll)
+                : Math.Max(0, first - (opt.MinPreRoll + opt.MaxPreRoll) / 2);
             double post = opt.PostRoll + (g.Any(e => e.Kind == EventKind.Champion) ? 8 : 0);
             double end = Math.Min(duration, last + post);
 
-            var reason = string.Join("、", g.GroupBy(e => e.Kind).OrderBy(k => k.Key)
-                .Select(k => k.Count() > 1 ? $"{k.Key.Zh()} ×{k.Count()}" : k.Key.Zh()));
             bool champion = g.Any(e => e.Kind == EventKind.Champion && e.Samples >= 2);
-            string? reject = null;
-            if (score < opt.MinScore && !champion)
-                reject = $"分數 {score:0.0} 低於門檻 {opt.MinScore:0.0}（只有{reason}，不夠確定是精華）";
-            else if (g.All(e => e.Kind == EventKind.Assist))
-                reject = $"只有助攻（{reason}），主攻是隊友";
+            var reject = RejectKind.None;
+            if (score < opt.MinScore && !champion) reject = RejectKind.LowScore;
+            else if (g.All(e => e.Kind == EventKind.Assist)) reject = RejectKind.AssistOnly;
 
             all.Add(new Candidate
             {
-                Start = start, End = end, FirstEvent = first, LastEvent = last, Score = score,
-                Events = g, Reason = reason, StartNote = startNote, Accepted = reject == null, RejectReason = reject,
+                Start = start, End = end, FirstEvent = first, LastEvent = last, Score = score, Events = g,
+                LeadIn = first - start, LeadInFromAudio = audio != null, Reject = reject, Threshold = opt.MinScore, TopN = opt.MaxCandidates,
             });
         }
 
@@ -248,21 +237,20 @@ public sealed class Scanner
             ? new Candidate
             {
                 Start = c.Start, End = c.End, FirstEvent = c.FirstEvent, LastEvent = c.LastEvent, Score = c.Score, Events = c.Events,
-                Reason = c.Reason, StartNote = c.StartNote, Accepted = false, RejectReason = $"分數 {c.Score:0.0}，排在前 {opt.MaxCandidates} 名之外",
+                LeadIn = c.LeadIn, LeadInFromAudio = c.LeadInFromAudio, Reject = RejectKind.NotTopN, Threshold = c.Threshold, TopN = c.TopN,
             }
             : c).OrderBy(c => c.Start).ToList();
     }
 
-    private static string? DescribePosition(List<PromptHit> hits)
+    private static (double X, double Y)? MedianPosition(List<PromptHit> hits)
     {
         var center = hits.Where(h => h.Kind is EventKind.Knock or EventKind.Elimination).ToList();
         if (center.Count == 0) return null;
         var xs = center.Select(h => h.X + h.W / 2).OrderBy(x => x).ToList();
         var ys = center.Select(h => h.Y + h.H / 2).OrderBy(y => y).ToList();
-        return $"擊倒／淘汰提示大多在畫面水平 {xs[xs.Count / 2]:P0}、垂直 {ys[ys.Count / 2]:P0} 的位置（從錄影自動量到，不是預設值）";
+        return (xs[xs.Count / 2], ys[ys.Count / 2]);
     }
 }
-
 public static class TimeFmt
 {
     public static string Hms(double s)

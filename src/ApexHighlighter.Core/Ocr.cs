@@ -34,7 +34,7 @@ public sealed class OcrReader
     public static OcrReader Create(string tag)
     {
         var e = OcrEngine.TryCreateFromLanguage(new Language(tag))
-                ?? throw new InvalidOperationException($"無法建立 OCR 引擎：{tag}");
+                ?? throw new InvalidOperationException(Loc.F("err.ocrCreate", tag));
         return new OcrReader(e, tag);
     }
 

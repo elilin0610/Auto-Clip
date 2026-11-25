@@ -20,6 +20,9 @@ string Opt(string name, string def)
     return i >= 0 && i + 1 < args.Length ? args[i + 1] : def;
 }
 
+// CLI output stays in Traditional Chinese unless --ui-lang en|zh-Hant|ja is given.
+Loc.Set(Opt("--ui-lang", "zh-Hant"));
+
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 

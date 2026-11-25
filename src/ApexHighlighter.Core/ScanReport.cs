@@ -31,24 +31,25 @@ public static class ScanReport
     public static string ToText(ScanResult r)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"檔案：{r.File}");
-        sb.AppendLine($"長度：{TimeFmt.Hms(r.Duration)}（{r.Resolution}）");
-        sb.AppendLine($"掃描耗時：{r.ScanSeconds:0.0} 秒（{r.FramesScanned} 張取樣，約 {(r.ScanSeconds > 0 ? r.Duration / r.ScanSeconds : 0):0.0} 倍速）");
-        sb.AppendLine($"遊戲語言：{r.Language}（OCR {r.OcrLanguage}{(r.LanguageVerified ? "" : "，關鍵字未經實測")}）");
+        sb.AppendLine(Loc.F("rep.file", r.File));
+        sb.AppendLine(Loc.F("rep.length", TimeFmt.Hms(r.Duration), r.Resolution));
+        sb.AppendLine(Loc.F("rep.time", r.ScanSeconds, r.FramesScanned, r.ScanSeconds > 0 ? r.Duration / r.ScanSeconds : 0));
+        sb.AppendLine(Loc.F("rep.lang", r.Language, r.OcrLanguage, r.LanguageVerified ? "" : Loc.T("rep.unverified")));
         if (r.PromptPosition != null) sb.AppendLine(r.PromptPosition);
-        if (r.SpectatingFramesSkipped > 0) sb.AppendLine($"觀戰畫面略過：{r.SpectatingFramesSkipped} 張");
-        foreach (var n in r.Notes) sb.AppendLine("備註：" + n);
+        if (r.SpectatingFramesSkipped > 0) sb.AppendLine(Loc.F("rep.spect", r.SpectatingFramesSkipped));
+        foreach (var n in r.Notes) sb.AppendLine(Loc.F("rep.note", n));
         sb.AppendLine();
-        sb.AppendLine($"偵測到的提示（去重後 {r.Events.Count} 個）：");
+        sb.AppendLine(Loc.F("rep.events", r.Events.Count));
         foreach (var e in r.Events)
-            sb.AppendLine($"  {TimeFmt.Hms(e.Time)}  {e.Kind.Zh(),-6} 出現 {e.Samples} 次  「{e.Text}」");
+            sb.AppendLine(Loc.F("rep.event", TimeFmt.Hms(e.Time), e.Kind.Name(), e.Samples, e.Text));
         sb.AppendLine();
-        sb.AppendLine($"交戰（{r.Clusters.Count} 波，建議 {r.Candidates.Count} 段）：");
+        sb.AppendLine(Loc.F("rep.clusters", r.Clusters.Count, r.Candidates.Count));
         int i = 0;
         foreach (var c in r.Clusters)
         {
-            sb.AppendLine($"  [{(c.Accepted ? "建議 " + (++i) : "略過")}] {TimeFmt.Hms(c.Start)}–{TimeFmt.Hms(c.End)}  分數 {c.Score:0.0}  {c.Reason}；{c.StartNote}");
-            if (!c.Accepted) sb.AppendLine($"         原因：{c.RejectReason}");
+            var tag = c.Accepted ? Loc.F("rep.suggest", ++i) : Loc.T("rep.skip");
+            sb.AppendLine(Loc.F("rep.cluster", tag, TimeFmt.Hms(c.Start), TimeFmt.Hms(c.End), c.Score, c.Reason, c.StartNote));
+            if (!c.Accepted) sb.AppendLine(Loc.F("rep.why", c.RejectReason));
         }
         return sb.ToString();
     }

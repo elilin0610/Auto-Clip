@@ -10,8 +10,7 @@ public static class FFmpegLocator
     public static string FFmpeg => Path.Combine(Dir, "ffmpeg.exe");
     public static string FFprobe => Path.Combine(Dir, "ffprobe.exe");
 
-    public static string Dir => _dir ??= Find() ?? throw new FileNotFoundException(
-        "找不到 ffmpeg.exe / ffprobe.exe。請安裝 FFmpeg（例如 winget install Gyan.FFmpeg），或把兩個 exe 放到程式資料夾下的 ffmpeg 子資料夾。");
+    public static string Dir => _dir ??= Find() ?? throw new FileNotFoundException(Loc.T("err.ffmpegMissing"));
 
     public static bool TryFind(out string? dir)
     {
@@ -66,7 +65,7 @@ public static class FFmpegLocator
         var stdout = await outTask;
         var stderr = await errTask;
         if (p.ExitCode != 0)
-            throw new InvalidOperationException($"{Path.GetFileName(exe)} 失敗 (exit {p.ExitCode}):\n{Tail(stderr, 1500)}");
+            throw new InvalidOperationException(Loc.F("err.toolFailed", Path.GetFileName(exe), p.ExitCode, Tail(stderr, 1500)));
         return stdout;
     }
 

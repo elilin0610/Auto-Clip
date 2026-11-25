@@ -61,6 +61,6 @@ public static class FrameReader
         ct.ThrowIfCancellationRequested();
         var err = await errTask;
         if (index == 0)
-            throw new InvalidOperationException("ffmpeg 沒有輸出任何畫面：" + FFmpegLocator.Tail(err, 1000));
+            throw new InvalidOperationException(Loc.F("err.noFrames", FFmpegLocator.Tail(err, 1000)));
     }
 }

@@ -7,10 +7,11 @@ public sealed record AudioTrack(int Index, int Channels, string? Language, strin
 {
     public override string ToString()
     {
-        var label = $"音軌 {Index + 1}（{Channels}ch";
-        if (!string.IsNullOrWhiteSpace(Title)) label += $"，{Title}";
-        if (!string.IsNullOrWhiteSpace(Language) && Language != "und") label += $"，{Language}";
-        return label + "）";
+        var extra = "";
+        var sep = Loc.T("track.sep");
+        if (!string.IsNullOrWhiteSpace(Title)) extra += sep + Title;
+        if (!string.IsNullOrWhiteSpace(Language) && Language != "und") extra += sep + Language;
+        return Loc.F("track.fmt", Index + 1, Channels, extra);
     }
 }
 
@@ -55,7 +56,7 @@ public sealed record MediaInfo(string Path, double Duration, int Width, int Heig
                 audio.Add(new AudioTrack(audio.Count, s.TryGetProperty("channels", out var ch) ? ch.GetInt32() : 0, lang, title));
             }
         }
-        if (w == 0) throw new InvalidDataException("檔案裡找不到影片串流。");
+        if (w == 0) throw new InvalidDataException(Loc.T("err.noVideo"));
         return new MediaInfo(path, duration, w, h, fps, vcodec, audio);
     }
 
