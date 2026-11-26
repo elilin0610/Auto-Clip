@@ -1,1 +1,109 @@
-# Auto-Clip
+# Apex Highlighter (v1: local, landscape)
+
+**English** | [繁體中文](README.zh-TW.md)
+
+After your stream ends, drop in your Apex recording and the app finds up to 3 fights worth posting to YouTube. You can play them, fine-tune the start and end, skip the ones you don't want, then export them as 16:9 MP4s. The original recording is only read, never modified.
+
+## Requirements
+
+- Windows 10/11, .NET 11 SDK
+- FFmpeg: `winget install Gyan.FFmpeg`. The app looks on PATH and in winget's install location automatically. You can also put `ffmpeg.exe` and `ffprobe.exe` in an `ffmpeg\` subfolder next to the app.
+- Windows built-in OCR: install the language pack for whatever language the game is in (Settings > Time & language > Language). No paid API is needed.
+- Exports use NVENC when you have an NVIDIA GPU, and fall back to x264 otherwise.
+
+## Running
+
+```powershell
+dotnet run --project src\ApexHighlighter.App -c Release
+```
+
+If Windows shows "Application Control policy has blocked this file", that is Smart App Control blocking a new unsigned program. You can:
+
+- turn it off under Windows Security > App & browser control > Smart App Control, or
+- use the CLI for now.
+
+CLI (same core as the UI):
+
+```powershell
+dotnet run --project src\ApexHighlighter.Cli -c Release -- scan "recording.mkv"
+dotnet run --project src\ApexHighlighter.Cli -c Release -- export "recording.mkv" 12:30 13:15 "output.mp4" --track 0
+dotnet run --project src\ApexHighlighter.Cli -c Release -- synccheck "recording.mkv" 12:30 "output.mp4"
+dotnet run --project src\ApexHighlighter.Cli -c Release -- ocr "recording.mkv" 754.5
+dotnet run --project src\ApexHighlighter.Cli -c Release -- export "recording.mkv" 12:30 13:15 "vertical.mp4" --format vfit
+dotnet run --project src\ApexHighlighter.Cli -c Release -- thumb "recording.mkv" 754.5 "thumbnail.jpg"
+dotnet run --project src\ApexHighlighter.Cli -c Release -- obswatch --port 4455
+```
+
+The built executable is `apexhl.exe` (in `src\ApexHighlighter.Cli\bin\<Debug or Release>\net11.0-windows10.0.19041.0\`), and you can run it directly, for example `apexhl scan "recording.mkv"`. Running it with no arguments lists every command. `recording.mkv` is just an example name; use the path to your own recording.
+
+Put the OBS password for `obswatch` in the environment variable `APEXHL_OBS_PASSWORD`, not on the command line (it would stay in your command history).
+
+## The interface
+
+1. **Import recording…**, or drag an MKV/MP4 straight into the window. The app measures the loudness of each audio track and picks the one that has sound by default.
+2. **Find highlights**: lists up to 3 clips. Each one shows a thumbnail, its time, what triggered it (for example "Knock ×2, Elimination"), when each prompt appeared, and how many seconds of lead-in were added. If the app isn't confident, it lists nothing.
+   - While scanning, prompts appear live as yellow ticks on the timeline. Click a tick to jump there and look without waiting for the scan to finish.
+3. Click a clip: the player jumps to its start, and you can adjust it:
+   - drag the white handles at either end of the selection on the timeline
+   - type the start/end time, or use ±0.2 / ±1 s and "Set here" (shortcuts I / O)
+   - "▶ Play clip", "▶ Check ending"
+   - untick = skip, "Remove" = take it off the list
+4. **+ Add at playhead**: add a clip by hand for anything the scan missed.
+5. **Export ticked clips**: one MP4 per clip, saved to `Videos\Apex精華` by default. After exporting, each file is checked automatically: full decode, aspect ratio, and audio/video start and length.
+   - Formats: Landscape 16:9 / Vertical 9:16 (crop middle) / Vertical 9:16 (whole frame). Vertical is 1080×1920 for YouTube Shorts. "Crop middle" cuts off the kill feed and both sides; "whole frame" puts the full picture in the middle and fills above and below with a blurred background.
+6. The output folder, format, and window size and position are remembered for next time.
+
+## Auto-scan when OBS stops recording
+
+Settings → "OBS": tick "When OBS stops recording, import and scan the recording automatically", fill in the address (default `localhost`), port (default 4455) and password, then press "Test connection" to check.
+
+- In OBS, first go to Tools → WebSocket Server Settings → tick "Enable WebSocket server"; the password is under "Show Connect Info". OBS 28 or later is required.
+- As soon as recording stops, the app imports that file and starts scanning. If a scan or export is already running, it waits for that to finish.
+- The app only listens for OBS notifications and never changes any OBS settings. If OBS isn't running it retries every 10 seconds; it stops retrying if the password is wrong.
+- The password is encrypted with Windows DPAPI before being saved in `settings.json`, so only your Windows account can decrypt it. It is never stored in plain text.
+
+## Interface language
+
+"⚙ Settings" (top right) → "Interface language": English / 繁體中文 / 日本語. The change applies immediately, no restart needed. Your choice is saved in `%LOCALAPPDATA%\ApexHighlighter\settings.json` and reused next time. On first launch the app follows the Windows display language (Chinese → Traditional Chinese, Japanese → Japanese, anything else → English).
+
+- What switches: buttons, help text, the status bar, each clip's trigger and details, skip reasons, export check results and scan reports. Messages already written to the log area below are not rewritten.
+- The game language needs no setting: every scan detects it from the prompts and HUD text in the recording, and shows the result at the top right (for example "Game language: English (detected)"). When there are too few prompts to tell, it says "probably …". The CLI can still force a language with `--lang`.
+- All text lives in `src/ApexHighlighter.Core/Loc.cs`, one key per string with English, Traditional Chinese and Japanese. To add a language, add a column to each row and an entry to `Languages`.
+- The CLI prints Traditional Chinese by default; add `--ui-lang en` or `--ui-lang ja` to change it.
+
+## How detection works (no hard-coded language or HUD position)
+
+- Takes 2 frames per second, scales them to 1280 wide, and runs Windows OCR on the **whole frame**. It doesn't assume where prompts appear; their position is measured from the recording after the scan.
+- `keywords.json` holds prompt word lists for English, Traditional Chinese, Simplified Chinese, Japanese and German. At the start of a scan every language is tried; the one whose prompts plus always-on HUD words (such as SQUADS LEFT) match most often wins, and only that one is used from then on.
+- The English rules were confirmed against real recordings:
+  - Counted: `KNOCKED DOWN` (knock), `ELIMINATED` / `COMEBACK KILL` (elimination), `SQUAD WIPE`, `YOU ARE THE NEW KILL LEADER`
+  - The text must be all caps, and only an icon may come before the keyword. So `Team Eliminated +5 RP`, subtitles and `Knockdown Shield` are not counted.
+  - `SQUAD ELIMINATED` means your own squad was wiped, so it is not counted.
+  - `ASSIST …` is an assist, weighted 0.5. A fight with only assists is not listed.
+- The same prompt showing on several frames in a row is merged into one. Events within 25 seconds of each other count as the same fight.
+- Start: from the first knock, search back for where loudness stays high (gunfire), limited to 8–25 seconds. End: 6 seconds after the last event (8 seconds more for a championship win).
+- Score: knock 1, elimination 1.5, squad wipe 2.5, kill leader 1, champion 4, assist 0.5. A hit seen on only one frame counts half. Fights scoring under 2 are not listed, and at most 3 are kept.
+- Every scan saves a full log to `%LOCALAPPDATA%\ApexHighlighter\scans\`, with every OCR hit's text and position, plus skipped fights and why they were skipped, so you can check false positives.
+
+## Export
+
+- Re-encodes from the start point, so cuts are frame-accurate; audio and video both start at 0.
+- If the source isn't 16:9, it is not scaled or cropped; it is centered and padded with black bars to 16:9 (for example 1920×1200 → 2134×1200).
+- Only one audio track is exported (the one selected in the UI), as AAC 192k.
+- Writes to a `.part.mp4` first and renames it only when done; on cancel or failure the partial file is deleted. The output path can't be the same as the source.
+
+## Project layout
+
+```
+src/ApexHighlighter.Core   detection, FFmpeg, export (shared by UI and CLI)
+src/ApexHighlighter.App    WPF interface
+src/ApexHighlighter.Cli    command line: scan, export, OCR test, A/V sync check
+acceptance/                acceptance notes and scan reports
+```
+
+## Not in this version
+
+Twitch download, YouTube upload, paid APIs.
+
+- Private YouTube upload needs you to create an OAuth client in Google Cloud and authorize this app. That is your own account setup, so it can only be hooked up after you do it.
+- Twitch download needs a separate download tool (such as yt-dlp).

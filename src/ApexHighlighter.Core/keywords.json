@@ -1,0 +1,83 @@
+{
+  "_說明": "畫面提示的關鍵字表。每個語言一組，掃描時會自動挑出命中最多的語言。phrases 比對時忽略大小寫與空白；forbidWords 是整個字詞相等才排除（例如 ELIMINATED BY = 被淘汰）；requireAny 至少要出現其中一個。verified=false 表示還沒用實際錄影確認過，命中結果要多看一眼。",
+  "weights": { "Knock": 1.0, "Elimination": 1.5, "SquadWipe": 2.5, "KillLeader": 1.0, "Champion": 4.0, "Assist": 0.5 },
+  "spectate": {
+    "en": [ "SPECTATING", "KILLCAM", "DEATH RECAP" ],
+    "zh-Hant": [ "觀戰", "正在觀看", "死亡回顧" ],
+    "zh-Hans": [ "观战", "正在观看", "死亡回顾" ],
+    "ja": [ "観戦中" ]
+  },
+  "languages": [
+    {
+      "id": "en",
+      "ocr": [ "en-US", "en-GB", "en" ],
+      "verified": true,
+      "_實測": "2026-11 用 Outplayed / SteelSeries 錄影確認：KNOCKED DOWN <名字> +150、ELIMINATED <名字>、SQUAD WIPE +100、YOU ARE THE NEW KILL LEADER 都是全大寫。大小寫混合的 Team Eliminated +5 RP、Announcer 字幕、Knockdown Shield 物品名都不是自己的擊殺。ASSIST, KNOCKED DOWN / ASSIST, ELIMINATION / ENEMY SQUAD ELIMINATED 是隊友主攻（助攻）。COMEBACK KILL +300 是淘汰。SQUAD ELIMINATED（大字、畫面上方）是自己小隊被淘汰。CHAMPION 畫面尚未實測。",
+      "upperCaseOnly": true,
+      "anchors": [ "SQUADS LEFT" ],
+      "ignore": [ "YOUR SQUAD", "SQUADS LEFT", "KNOCKDOWN SHIELD" ],
+      "rules": [
+        { "kind": "Assist", "phrases": [ "ASSIST", "ENEMY SQUAD ELIMINATED" ], "maxPrefix": 2 },
+        { "kind": "Knock", "phrases": [ "KNOCKED DOWN" ], "maxPrefix": 2, "forbidWords": [ "BY", "WERE", "YOU", "SHIELD" ] },
+        { "kind": "SquadWipe", "phrases": [ "SQUAD WIPE" ], "maxPrefix": 2, "forbidWords": [ "YOUR", "BY" ] },
+        { "kind": "Elimination", "phrases": [ "ELIMINATED", "COMEBACK KILL" ], "maxPrefix": 2, "forbidWords": [ "BY", "WERE", "YOUR", "SQUAD", "SQUADS", "HAS", "BEEN", "TEAM", "LEADER" ] },
+        { "kind": "KillLeader", "phrases": [ "NEW KILL LEADER", "THE KILL LEADER" ], "requireAny": [ "YOU ARE" ] },
+        { "kind": "Champion", "phrases": [ "APEX CHAMPION" ], "maxPrefix": 12, "forbidWords": [ "SQUAD" ] }
+      ]
+    },
+    {
+      "id": "zh-Hant",
+      "ocr": [ "zh-Hant-TW", "zh-Hant", "zh-TW", "zh-HK" ],
+      "anchors": [ "下個等級", "剩餘小隊", "小隊剩餘", "隊伍剩餘" ],
+      "verified": false,
+      "_實測": "2026-11 用網路上繁中介面的 Apex 影片確認：擊倒提示是「擊倒 <名字> +150」（下一行「造成 N 點傷害」），在準心下方，Windows 繁中 OCR 讀得到「擊倒」；左下 HUD 有「下個等級：N 進化」。其他提示（淘汰、滅隊、擊殺王、助攻、冠軍）的中文用字還沒看到，是推測的。中文沒有大小寫可以排除字幕，所以每條規則都限制關鍵字必須在行首（maxPrefix），字幕行開頭是角色名，會被排除。",
+      "rules": [
+        { "kind": "Assist", "phrases": [ "助攻" ], "maxPrefix": 2 },
+        { "kind": "Knock", "phrases": [ "擊倒" ], "maxPrefix": 2, "forbidPhrases": [ "被擊倒", "你被", "擊倒護盾" ] },
+        { "kind": "SquadWipe", "phrases": [ "全隊淘汰", "小隊已淘汰", "小隊淘汰", "團滅", "全隊殲滅", "小隊殲滅" ], "maxPrefix": 2, "forbidPhrases": [ "你的小隊" ] },
+        { "kind": "Elimination", "phrases": [ "淘汰", "擊殺" ], "maxPrefix": 2, "forbidPhrases": [ "被淘汰", "被擊殺", "你的小隊", "小隊", "淘汰者" ] },
+        { "kind": "KillLeader", "phrases": [ "擊殺王", "擊殺領先", "殺敵王" ], "requireAny": [ "你是", "你成為" ] },
+        { "kind": "Champion", "phrases": [ "APEX冠軍", "APEX 冠軍" ], "maxPrefix": 6, "forbidPhrases": [ "冠軍小隊" ] }
+      ]
+    },
+    {
+      "id": "zh-Hans",
+      "ocr": [ "zh-Hans-CN", "zh-Hans", "zh-CN" ],
+      "anchors": [ "剩余小队", "小队剩余" ],
+      "verified": false,
+      "rules": [
+        { "kind": "Knock", "phrases": [ "击倒" ], "forbidPhrases": [ "被击倒", "你被" ] },
+        { "kind": "SquadWipe", "phrases": [ "全队淘汰", "小队已淘汰", "团灭" ], "forbidPhrases": [ "你的小队" ] },
+        { "kind": "Elimination", "phrases": [ "淘汰", "击杀" ], "forbidPhrases": [ "被淘汰", "被击杀", "小队" ] },
+        { "kind": "KillLeader", "phrases": [ "击杀王", "击杀领先" ], "requireAny": [ "你是", "你成为" ] },
+        { "kind": "Champion", "phrases": [ "APEX冠军", "APEX 冠军" ], "forbidPhrases": [ "冠军小队" ] }
+      ]
+    },
+    {
+      "id": "ja",
+      "ocr": [ "ja", "ja-JP" ],
+      "anchors": [ "残り部隊", "部隊残り" ],
+      "verified": false,
+      "rules": [
+        { "kind": "Knock", "phrases": [ "ダウン" ], "forbidPhrases": [ "ダウンされ" ] },
+        { "kind": "SquadWipe", "phrases": [ "部隊全滅", "部隊を全滅" ], "forbidPhrases": [ "あなたの部隊" ] },
+        { "kind": "Elimination", "phrases": [ "キル", "倒した" ], "forbidPhrases": [ "キルされ", "キルリーダー" ] },
+        { "kind": "KillLeader", "phrases": [ "キルリーダー" ], "requireAny": [ "あなたが" ] },
+        { "kind": "Champion", "phrases": [ "チャンピオン" ], "forbidPhrases": [ "チャンピオン部隊" ] }
+      ]
+    },
+    {
+      "id": "de",
+      "ocr": [ "de-DE", "de" ],
+      "anchors": [ "TRUPPS ÜBRIG", "VERBLEIBENDE TRUPPS" ],
+      "verified": false,
+      "rules": [
+        { "kind": "Knock", "phrases": [ "NIEDERGESTRECKT" ], "forbidWords": [ "VON", "WURDEST" ] },
+        { "kind": "SquadWipe", "phrases": [ "TRUPP AUSGELÖSCHT", "TRUPP ELIMINIERT" ], "forbidWords": [ "DEIN" ] },
+        { "kind": "Elimination", "phrases": [ "ELIMINIERT" ], "forbidWords": [ "VON", "TRUPP", "DEIN", "WURDEST" ] },
+        { "kind": "KillLeader", "phrases": [ "KILL LEADER", "KILL-LEADER" ], "requireAny": [ "DU BIST" ] },
+        { "kind": "Champion", "phrases": [ "APEX-CHAMPION", "APEX CHAMPION" ], "forbidWords": [ "TRUPP" ] }
+      ]
+    }
+  ]
+}

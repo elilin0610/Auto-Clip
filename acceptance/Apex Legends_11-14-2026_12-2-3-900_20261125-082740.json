@@ -1,0 +1,19 @@
+﻿{
+  "File": "<Outplayed>\\Apex Legends_11-14-2026_11-51-38-377\\Apex Legends_11-14-2026_12-2-3-900.mp4",
+  "Duration": 606.89,
+  "Resolution": "1920x1080",
+  "ScanSeconds": 39.8069659,
+  "FramesScanned": 1214,
+  "Language": "en",
+  "OcrLanguage": "en-US",
+  "LanguageVerified": true,
+  "PromptPosition": null,
+  "SpectatingFramesSkipped": 3,
+  "Hits": [],
+  "Events": [],
+  "Clusters": [],
+  "Candidates": [],
+  "Notes": [
+    "可用的 OCR 語言：de-DE、en-US、ja、zh-Hant-TW；自動判斷遊戲語言。"
+  ]
+}

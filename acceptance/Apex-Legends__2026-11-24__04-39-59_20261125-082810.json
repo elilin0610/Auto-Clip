@@ -1,0 +1,446 @@
+﻿{
+  "File": "<SteelSeries Moments>\\Apex-Legends__2026-11-24__04-39-59.mp4",
+  "Duration": 61.333833,
+  "Resolution": "1920x1080",
+  "ScanSeconds": 3.9226972,
+  "FramesScanned": 123,
+  "Language": "en",
+  "OcrLanguage": "en-US",
+  "LanguageVerified": true,
+  "PromptPosition": "擊倒／淘汰提示大多在畫面水平 44%、垂直 72% 的位置（從錄影自動量到，不是預設值）",
+  "SpectatingFramesSkipped": 0,
+  "Hits": [
+    {
+      "Time": 0,
+      "Kind": "Elimination",
+      "Text": "e ELIMINATED",
+      "Rest": "",
+      "X": 0.40546875,
+      "Y": 0.7097222222222223,
+      "W": 0.09296875,
+      "H": 0.019444444444444445
+    },
+    {
+      "Time": 19,
+      "Kind": "Knock",
+      "Text": "KNOCKED DOWN",
+      "Rest": "",
+      "X": 0.384375,
+      "Y": 0.7111111111111111,
+      "W": 0.10078125,
+      "H": 0.018055555555555554
+    },
+    {
+      "Time": 20,
+      "Kind": "Knock",
+      "Text": "_ KNOCKED DOWN",
+      "Rest": "",
+      "X": 0.37734375,
+      "Y": 0.7111111111111111,
+      "W": 0.1078125,
+      "H": 0.018055555555555554
+    },
+    {
+      "Time": 20.5,
+      "Kind": "Knock",
+      "Text": "*€KNOCKED DOWN",
+      "Rest": "",
+      "X": 0.3671875,
+      "Y": 0.7083333333333334,
+      "W": 0.11796875,
+      "H": 0.034722222222222224
+    },
+    {
+      "Time": 22.5,
+      "Kind": "Elimination",
+      "Text": "e ELIMINATED",
+      "Rest": "",
+      "X": 0.42421875,
+      "Y": 0.7111111111111111,
+      "W": 0.09375,
+      "H": 0.02361111111111111
+    },
+    {
+      "Time": 24,
+      "Kind": "Elimination",
+      "Text": "-.e ELIMINATED",
+      "Rest": "",
+      "X": 0.40703125,
+      "Y": 0.7111111111111111,
+      "W": 0.10546875,
+      "H": 0.018055555555555554
+    },
+    {
+      "Time": 43.5,
+      "Kind": "Knock",
+      "Text": "GKNOCKEO DOWN",
+      "Rest": "",
+      "X": 0.36875,
+      "Y": 0.7069444444444445,
+      "W": 0.128125,
+      "H": 0.0375
+    },
+    {
+      "Time": 44,
+      "Kind": "Knock",
+      "Text": "KNOCKED DOWN",
+      "Rest": "",
+      "X": 0.39140625,
+      "Y": 0.7111111111111111,
+      "W": 0.1015625,
+      "H": 0.018055555555555554
+    },
+    {
+      "Time": 44.5,
+      "Kind": "Knock",
+      "Text": "KNOCKED DOWN",
+      "Rest": "",
+      "X": 0.39140625,
+      "Y": 0.7111111111111111,
+      "W": 0.1015625,
+      "H": 0.018055555555555554
+    },
+    {
+      "Time": 45,
+      "Kind": "Knock",
+      "Text": "•KNOCKED DOWN",
+      "Rest": "",
+      "X": 0.36953125,
+      "Y": 0.7125,
+      "W": 0.128125,
+      "H": 0.03611111111111111
+    },
+    {
+      "Time": 45.5,
+      "Kind": "Knock",
+      "Text": "KNOCKEO ooWN",
+      "Rest": "",
+      "X": 0.41171875,
+      "Y": 0.7111111111111111,
+      "W": 0.1015625,
+      "H": 0.04583333333333333
+    },
+    {
+      "Time": 49.5,
+      "Kind": "Knock",
+      "Text": "KNOCKED DOWN",
+      "Rest": "",
+      "X": 0.38359375,
+      "Y": 0.7111111111111111,
+      "W": 0.1015625,
+      "H": 0.018055555555555554
+    },
+    {
+      "Time": 50,
+      "Kind": "Knock",
+      "Text": "KNOCKED DOWN",
+      "Rest": "",
+      "X": 0.38359375,
+      "Y": 0.7111111111111111,
+      "W": 0.1015625,
+      "H": 0.018055555555555554
+    },
+    {
+      "Time": 50.5,
+      "Kind": "Knock",
+      "Text": "KNOCKED DOWN",
+      "Rest": "",
+      "X": 0.38359375,
+      "Y": 0.7111111111111111,
+      "W": 0.1015625,
+      "H": 0.018055555555555554
+    },
+    {
+      "Time": 52.5,
+      "Kind": "Elimination",
+      "Text": "e ELIMINATED",
+      "Rest": "",
+      "X": 0.41953125,
+      "Y": 0.7111111111111111,
+      "W": 0.09296875,
+      "H": 0.018055555555555554
+    },
+    {
+      "Time": 53,
+      "Kind": "Elimination",
+      "Text": "ELIMINATED",
+      "Rest": "",
+      "X": 0.43125,
+      "Y": 0.7083333333333334,
+      "W": 0.078125,
+      "H": 0.020833333333333332
+    },
+    {
+      "Time": 53.5,
+      "Kind": "Elimination",
+      "Text": "e ELIMINATED",
+      "Rest": "",
+      "X": 0.41953125,
+      "Y": 0.7111111111111111,
+      "W": 0.09296875,
+      "H": 0.018055555555555554
+    },
+    {
+      "Time": 54,
+      "Kind": "Elimination",
+      "Text": "e ELIMINATED CONOLllTIS06",
+      "Rest": "CONOLLLTIS06",
+      "X": 0.41953125,
+      "Y": 0.7111111111111111,
+      "W": 0.16328125,
+      "H": 0.018055555555555554
+    },
+    {
+      "Time": 54.5,
+      "Kind": "Elimination",
+      "Text": "e ELIMINATED",
+      "Rest": "",
+      "X": 0.41953125,
+      "Y": 0.7097222222222223,
+      "W": 0.09296875,
+      "H": 0.019444444444444445
+    },
+    {
+      "Time": 55,
+      "Kind": "SquadWipe",
+      "Text": "SQUAD WIPE +1004Wi",
+      "Rest": "1004WI",
+      "X": 0.425,
+      "Y": 0.7083333333333334,
+      "W": 0.15078125,
+      "H": 0.025
+    },
+    {
+      "Time": 55.5,
+      "Kind": "SquadWipe",
+      "Text": "SQUAD WIPE + 100",
+      "Rest": "100",
+      "X": 0.425,
+      "Y": 0.7111111111111111,
+      "W": 0.115625,
+      "H": 0.019444444444444445
+    },
+    {
+      "Time": 57,
+      "Kind": "KillLeader",
+      "Text": "YOU ARE THE NEW KILL LEADER",
+      "Rest": "",
+      "X": 0.3609375,
+      "Y": 0.2361111111111111,
+      "W": 0.28046875,
+      "H": 0.02361111111111111
+    },
+    {
+      "Time": 57.5,
+      "Kind": "KillLeader",
+      "Text": "YOU ARE THE NEW KILL LEADER",
+      "Rest": "",
+      "X": 0.36015625,
+      "Y": 0.2361111111111111,
+      "W": 0.2828125,
+      "H": 0.02638888888888889
+    },
+    {
+      "Time": 58.5,
+      "Kind": "KillLeader",
+      "Text": "YOU ARE THE NEW KILL LEADER",
+      "Rest": "",
+      "X": 0.3578125,
+      "Y": 0.2361111111111111,
+      "W": 0.28671875,
+      "H": 0.025
+    },
+    {
+      "Time": 59,
+      "Kind": "KillLeader",
+      "Text": "YOU ARE THE NEW KILL LEADER",
+      "Rest": "",
+      "X": 0.3578125,
+      "Y": 0.2361111111111111,
+      "W": 0.2875,
+      "H": 0.025
+    }
+  ],
+  "Events": [
+    {
+      "Time": 0,
+      "LastSeen": 0,
+      "Kind": "Elimination",
+      "Text": "e ELIMINATED",
+      "Samples": 1
+    },
+    {
+      "Time": 19,
+      "LastSeen": 20.5,
+      "Kind": "Knock",
+      "Text": "KNOCKED DOWN",
+      "Samples": 3
+    },
+    {
+      "Time": 22.5,
+      "LastSeen": 24,
+      "Kind": "Elimination",
+      "Text": "e ELIMINATED",
+      "Samples": 2
+    },
+    {
+      "Time": 43.5,
+      "LastSeen": 50.5,
+      "Kind": "Knock",
+      "Text": "GKNOCKEO DOWN",
+      "Samples": 8
+    },
+    {
+      "Time": 52.5,
+      "LastSeen": 54.5,
+      "Kind": "Elimination",
+      "Text": "e ELIMINATED",
+      "Samples": 5
+    },
+    {
+      "Time": 55,
+      "LastSeen": 55.5,
+      "Kind": "SquadWipe",
+      "Text": "SQUAD WIPE +1004Wi",
+      "Samples": 2
+    },
+    {
+      "Time": 57,
+      "LastSeen": 59,
+      "Kind": "KillLeader",
+      "Text": "YOU ARE THE NEW KILL LEADER",
+      "Samples": 4
+    }
+  ],
+  "Clusters": [
+    {
+      "Start": 0,
+      "End": 61.333833,
+      "FirstEvent": 0,
+      "LastEvent": 59,
+      "Score": 9.25,
+      "Events": [
+        {
+          "Time": 0,
+          "LastSeen": 0,
+          "Kind": "Elimination",
+          "Text": "e ELIMINATED",
+          "Samples": 1
+        },
+        {
+          "Time": 19,
+          "LastSeen": 20.5,
+          "Kind": "Knock",
+          "Text": "KNOCKED DOWN",
+          "Samples": 3
+        },
+        {
+          "Time": 22.5,
+          "LastSeen": 24,
+          "Kind": "Elimination",
+          "Text": "e ELIMINATED",
+          "Samples": 2
+        },
+        {
+          "Time": 43.5,
+          "LastSeen": 50.5,
+          "Kind": "Knock",
+          "Text": "GKNOCKEO DOWN",
+          "Samples": 8
+        },
+        {
+          "Time": 52.5,
+          "LastSeen": 54.5,
+          "Kind": "Elimination",
+          "Text": "e ELIMINATED",
+          "Samples": 5
+        },
+        {
+          "Time": 55,
+          "LastSeen": 55.5,
+          "Kind": "SquadWipe",
+          "Text": "SQUAD WIPE +1004Wi",
+          "Samples": 2
+        },
+        {
+          "Time": 57,
+          "LastSeen": 59,
+          "Kind": "KillLeader",
+          "Text": "YOU ARE THE NEW KILL LEADER",
+          "Samples": 4
+        }
+      ],
+      "Reason": "擊倒 ×2、淘汰 ×3、全隊淘汰、成為擊殺王",
+      "StartNote": "依音量往前抓 0 秒",
+      "Accepted": true,
+      "RejectReason": null
+    }
+  ],
+  "Candidates": [
+    {
+      "Start": 0,
+      "End": 61.333833,
+      "FirstEvent": 0,
+      "LastEvent": 59,
+      "Score": 9.25,
+      "Events": [
+        {
+          "Time": 0,
+          "LastSeen": 0,
+          "Kind": "Elimination",
+          "Text": "e ELIMINATED",
+          "Samples": 1
+        },
+        {
+          "Time": 19,
+          "LastSeen": 20.5,
+          "Kind": "Knock",
+          "Text": "KNOCKED DOWN",
+          "Samples": 3
+        },
+        {
+          "Time": 22.5,
+          "LastSeen": 24,
+          "Kind": "Elimination",
+          "Text": "e ELIMINATED",
+          "Samples": 2
+        },
+        {
+          "Time": 43.5,
+          "LastSeen": 50.5,
+          "Kind": "Knock",
+          "Text": "GKNOCKEO DOWN",
+          "Samples": 8
+        },
+        {
+          "Time": 52.5,
+          "LastSeen": 54.5,
+          "Kind": "Elimination",
+          "Text": "e ELIMINATED",
+          "Samples": 5
+        },
+        {
+          "Time": 55,
+          "LastSeen": 55.5,
+          "Kind": "SquadWipe",
+          "Text": "SQUAD WIPE +1004Wi",
+          "Samples": 2
+        },
+        {
+          "Time": 57,
+          "LastSeen": 59,
+          "Kind": "KillLeader",
+          "Text": "YOU ARE THE NEW KILL LEADER",
+          "Samples": 4
+        }
+      ],
+      "Reason": "擊倒 ×2、淘汰 ×3、全隊淘汰、成為擊殺王",
+      "StartNote": "依音量往前抓 0 秒",
+      "Accepted": true,
+      "RejectReason": null
+    }
+  ],
+  "Notes": [
+    "可用的 OCR 語言：de-DE、en-US、ja、zh-Hant-TW；自動判斷遊戲語言。"
+  ]
+}
