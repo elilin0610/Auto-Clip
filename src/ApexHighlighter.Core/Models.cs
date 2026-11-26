@@ -17,7 +17,19 @@ public sealed record PromptHit(double Time, EventKind Kind, string Text, string 
 /// <summary>A deduplicated on-screen prompt (the same prompt stays up for ~2–3 s and spans several samples).</summary>
 public sealed record GameEvent(double Time, double LastSeen, EventKind Kind, string Text, int Samples);
 
-public enum RejectKind { None, LowScore, AssistOnly, NotTopN }
+public enum RejectKind { None, LowScore, AssistOnly, NotTopN, Unconfirmed }
+
+/// <summary>
+/// Result of the second look at one fight (<see cref="CandidateVerifier"/>): prompts seen in too few samples are read again
+/// at a higher frame rate, and only the ones seen again count.
+/// </summary>
+/// <param name="Rechecked">Events that were weakly seen and read again.</param>
+/// <param name="Confirmed">Events that count after the check (strong ones plus rechecked ones seen again).</param>
+/// <param name="Total">Events in the fight.</param>
+/// <param name="ScoreAfter">Score counting only confirmed events, each at full weight.</param>
+/// <param name="Frames">Frames OCR'd during the recheck.</param>
+/// <param name="Reread">False when the frames could not be read again, so the first decision was kept.</param>
+public sealed record CandidateCheck(int Rechecked, int Confirmed, int Total, double ScoreAfter, int Frames, bool Reread);
 
 /// <summary>Keeps a clip's start before its end (at least <see cref="MinLength"/> apart) and inside the recording.</summary>
 public static class ClipRange
@@ -43,7 +55,9 @@ public sealed class Candidate
     /// <summary>Seconds between clip start and the first prompt.</summary>
     public double LeadIn { get; init; }
     public bool LeadInFromAudio { get; init; }
-    public RejectKind Reject { get; init; }
+    public RejectKind Reject { get; set; }
+    /// <summary>Second look at this fight, or null if it was not checked.</summary>
+    public CandidateCheck? Check { get; set; }
     public double Threshold { get; init; }
     public int TopN { get; init; }
 
@@ -56,6 +70,7 @@ public sealed class Candidate
         RejectKind.LowScore => Loc.F("reject.lowScore", Score, Threshold, Reason),
         RejectKind.AssistOnly => Loc.F("reject.assistOnly", Reason),
         RejectKind.NotTopN => Loc.F("reject.notTop", Score, TopN),
+        RejectKind.Unconfirmed => Loc.F("reject.unconfirmed", Check?.Confirmed ?? 0, Check?.Total ?? Events.Count, Check?.ScoreAfter ?? 0, Threshold),
         _ => null,
     };
 
@@ -107,6 +122,20 @@ public sealed class ScanOptions
     /// only the minimum lead-in. 0 = no limit.
     /// </summary>
     public double MaxClipLength { get; set; } = 120;
+
+    /// <summary>
+    /// Second look (produce → verify → redo): before a fight is suggested, prompts seen in fewer than
+    /// <see cref="VerifyTrustSamples"/> samples are read again at <see cref="VerifyFps"/>. A fight whose score drops below
+    /// <see cref="MinScore"/> is dropped and the next one is checked instead; a near-miss whose weak prompts are confirmed is promoted.
+    /// </summary>
+    public bool VerifyCandidates { get; set; } = true;
+    public double VerifyFps { get; set; } = 6;
+    /// <summary>Events seen in at least this many samples are trusted without a recheck.</summary>
+    public int VerifyTrustSamples { get; set; } = 3;
+    /// <summary>A rechecked event counts when its prompt is read again in at least this many frames.</summary>
+    public int VerifyMinFrames { get; set; } = 3;
+    /// <summary>Extra fights that may be checked beyond <see cref="MaxCandidates"/> when some fail the check.</summary>
+    public int VerifySpare { get; set; } = 2;
 }
 
 public sealed class ScanProgress

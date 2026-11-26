@@ -30,8 +30,11 @@ public sealed record Frame(int Index, double Time, byte[] Bgra, int Width, int H
 /// <summary>Streams downscaled BGRA frames out of ffmpeg at a fixed sample rate (no temp files, source untouched).</summary>
 public static class FrameReader
 {
+    /// <param name="start">Seconds to seek to before reading (0 = from the beginning). Frame times stay relative to this point.</param>
+    /// <param name="length">Seconds to read (0 = to the end).</param>
     public static async IAsyncEnumerable<Frame> ReadAsync(MediaInfo info, double sampleFps, int targetWidth,
-        bool useHwDecode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        bool useHwDecode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default,
+        double start = 0, double length = 0)
     {
         int w = Math.Min(targetWidth, info.Width);
         w -= w % 2;
@@ -48,7 +51,11 @@ public static class FrameReader
         };
         var args = new List<string> { "-hide_banner", "-nostats", "-loglevel", "error" };
         if (useHwDecode) args.AddRange(["-hwaccel", "auto"]);
-        args.AddRange(["-i", info.Path, "-an", "-sn", "-dn",
+        // -ss before -i seeks quickly (used by the second look in CandidateVerifier, which reads only a few seconds)
+        if (start > 0) args.AddRange(["-ss", start.ToString("0.###", CultureInfo.InvariantCulture)]);
+        args.AddRange(["-i", info.Path]);
+        if (length > 0) args.AddRange(["-t", length.ToString("0.###", CultureInfo.InvariantCulture)]);
+        args.AddRange(["-an", "-sn", "-dn",
             "-vf", $"fps={sampleFps.ToString(CultureInfo.InvariantCulture)},scale={w}:{h}:flags=area",
             "-pix_fmt", "bgra", "-f", "rawvideo", "pipe:1"]);
         foreach (var a in args) psi.ArgumentList.Add(a);

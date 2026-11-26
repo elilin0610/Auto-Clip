@@ -131,6 +131,15 @@ public static class Loc
         ["progress.lang"] = [" (language: {0})", "（語言：{0}）", "（言語：{0}）"],
         ["progress.detecting"] = [" (detecting game language)", "（判斷遊戲語言中）", "（ゲームの言語を判定中）"],
         ["progress.merging"] = ["Analyzing audio and grouping fights…", "分析音量、合併交戰…", "音量を解析し、交戦をまとめています…"],
+        ["progress.verifying"] = ["Taking a second look at the fights…", "二次確認候選片段…", "候補の交戦をもう一度確認しています…"],
+        ["note.verified"] = [
+            "Second look: re-read {1} weak prompt(s) in {0} fight(s) ({3} frames); {2} fight(s) dropped because the prompts were not seen again.",
+            "二次確認：重讀 {0} 段交戰裡 {1} 個不夠確定的提示（{3} 張畫面），其中 {2} 段因為提示沒再出現而拿掉。",
+            "再確認：{0} 件の交戦で不確かな表示 {1} 件を読み直しました（{3} フレーム）。表示が再び見つからなかった {2} 件を外しました。"],
+        ["note.verifyFailed"] = [
+            "Second look at {0} failed, keeping the first result: {1}",
+            "{0} 的二次確認失敗，保留原本的判斷：{1}",
+            "{0} の再確認に失敗したため、最初の判定を使います：{1}"],
 
         ["start.audio"] = ["lead-in {0:0} s, from audio", "依音量往前抓 {0:0} 秒", "音量から {0:0} 秒前に開始"],
         ["start.fixed"] = ["fixed lead-in {0:0} s", "固定往前 {0:0} 秒", "固定で {0:0} 秒前に開始"],
@@ -139,6 +148,10 @@ public static class Loc
             "分數 {0:0.0} 低於門檻 {1:0.0}（只有{2}，不夠確定是精華）",
             "スコア {0:0.0} がしきい値 {1:0.0} 未満（{2} のみで、ハイライトとは言い切れません）"],
         ["reject.assistOnly"] = ["Assists only ({0}); a teammate got the kills", "只有助攻（{0}），主攻是隊友", "アシストのみ（{0}）。キルは味方によるもの"],
+        ["reject.unconfirmed"] = [
+            "Second look failed: only {0} of {1} prompts were seen again, score {2:0.0} is below {3:0.0}",
+            "二次確認沒過：{1} 個提示只有 {0} 個重讀時再出現，分數 {2:0.0} 低於 {3:0.0}",
+            "再確認で不合格：{1} 件中 {0} 件しか再び見つからず、スコア {2:0.0} が {3:0.0} 未満"],
         ["reject.notTop"] = ["Score {0:0.0}, outside the top {1}", "分數 {0:0.0}，排在前 {1} 名之外", "スコア {0:0.0}、上位 {1} 件に入りません"],
         ["position"] = [
             "Knock / elimination prompts were mostly at {0:P0} across and {1:P0} down the screen (measured from this recording, not a preset)",

@@ -18,6 +18,7 @@ namespace ApexHighlighter.Core;
 //   ⑤ 去重複：同一個提示會在畫面停 2~3 秒，被讀到好幾次 → 合併成一個事件（Deduplicate）
 //   ⑥ 分群：相隔 25 秒內的事件算同一場交戰（Cluster），算分數，用音量找交戰開始時間
 //   ⑦ 分數夠高的前 3 名 → 候選片段
+//   ⑧ 二次確認：讀得不夠確定的提示用更高 fps 重讀，沒再看到就不算分，不夠分就換下一段（CandidateVerifier）
 //
 // 誰呼叫它：App 的 MainWindow（按「掃描精華」）和 CLI 的 scan 指令。
 // =====================================================================================
@@ -222,9 +223,56 @@ public sealed class Scanner
 
         // ⑥⑦ 分群成交戰、算分、挑前 3 名
         result.Clusters = Cluster(result.Events, audio, info.Duration, opt);
+
+        // ⑧ 二次確認：只被讀到幾次的提示用更高 fps 重讀，沒再看到就不算分；不夠分就換下一段（CandidateVerifier）
+        if (opt.VerifyCandidates && result.Clusters.Count > 0)
+        {
+            progress?.Report(new ScanProgress { Fraction = 1, Message = Loc.T("progress.verifying") });
+            FrameRegion? roi;
+            lock (gate) roi = region;
+            var reader = OcrReader.Create(winner.OcrTag);
+            result.Clusters = await CandidateVerifier.SelectAsync(result.Clusters, opt, _cfg.Weight,
+                c => RereadAsync(info, c, winner.Matcher, reader, roi, opt, result.Notes, ct), ct);
+            var checkedOnes = result.Clusters.Where(c => c.Check is { Rechecked: > 0, Reread: true }).ToList();
+            if (checkedOnes.Count > 0)
+                result.Notes.Add(Loc.F("note.verified", checkedOnes.Count, checkedOnes.Sum(c => c.Check!.Rechecked),
+                    checkedOnes.Count(c => c.Reject == RejectKind.Unconfirmed), checkedOnes.Sum(c => c.Check!.Frames)));
+        }
         result.Candidates = result.Clusters.Where(c => c.Accepted).ToList();
         result.ScanSeconds = sw.Elapsed.TotalSeconds;
         return result;
+    }
+
+    // 二次確認用：把一段交戰裡讀得不夠確定的提示附近，用更高的 fps 重讀一次。讀不到畫面就回傳 null（保留原判斷）。
+    private static async Task<(IReadOnlyList<PromptHit> Hits, int Frames)?> RereadAsync(MediaInfo info, Candidate c, KeywordMatcher matcher,
+        OcrReader reader, FrameRegion? roi, ScanOptions opt, List<string> notes, CancellationToken ct)
+    {
+        var hits = new List<PromptHit>();
+        int frames = 0;
+        try
+        {
+            foreach (var (start, end) in CandidateVerifier.Windows(c, opt, info.Duration))
+            {
+                await foreach (var f in FrameReader.ReadAsync(info, opt.VerifyFps, opt.OcrWidth, opt.HardwareDecode, ct, start, end - start))
+                {
+                    try
+                    {
+                        foreach (var l in await reader.ReadAsync(f.Bgra, f.Width, f.Height, roi))
+                            if (matcher.Match(l.Text) is { } m)
+                                hits.Add(new PromptHit(start + f.Time, m.Kind, l.Text, m.After, l.X, l.Y, l.W, l.H));
+                    }
+                    finally { f.Release(); }
+                    frames++;
+                }
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            notes.Add(Loc.F("note.verifyFailed", TimeFmt.Hms(c.Start), ex.Message));
+            return null;
+        }
+        return frames == 0 ? null : (hits, frames);
     }
 
     // 列出要試的「語言 × OCR 引擎」組合。
