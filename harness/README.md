@@ -1,6 +1,6 @@
 # Verify harness (loop / graph / harness)
 
-[繁體中文](README.zh-TW.md)
+[繁體中文](README.zh-TW.md) | **English** | [日本語](README.ja.md)
 
 Lets Claude (or you) check a change end to end without watching it: build, unit tests, real-recording scan, test export, and a report. Inspired by the "loop, graph, harness" way of running agents.
 

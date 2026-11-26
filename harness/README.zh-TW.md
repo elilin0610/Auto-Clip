@@ -1,6 +1,6 @@
 # 驗證流程（loop / graph / harness）
 
-[English](README.md)
+**繁體中文** | [English](README.md) | [日本語](README.ja.md)
 
 讓 Claude（或你）改完程式後不用盯著，就能從頭到尾驗一遍：組建、單元測試、用真實錄影掃描、試剪，最後產出報告。做法參考「loop、graph、harness」三層 Agent 架構。
 

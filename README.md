@@ -1,6 +1,6 @@
 # Apex Highlighter (v1: local, landscape)
 
-**English** | [繁體中文](README.zh-TW.md)
+[繁體中文](README.zh-TW.md) | **English** | [日本語](README.ja.md)
 
 After your stream ends, drop in your Apex recording and the app finds up to 3 fights worth posting to YouTube. You can play them, fine-tune the start and end, skip the ones you don't want, then export them as 16:9 MP4s. The original recording is only read, never modified.
 
@@ -32,18 +32,7 @@ dotnet run --project src\ApexHighlighter.Cli -c Release -- ocr "recording.mkv" 7
 dotnet run --project src\ApexHighlighter.Cli -c Release -- export "recording.mkv" 12:30 13:15 "vertical.mp4" --format vfit
 dotnet run --project src\ApexHighlighter.Cli -c Release -- thumb "recording.mkv" 754.5 "thumbnail.jpg"
 dotnet run --project src\ApexHighlighter.Cli -c Release -- obswatch --port 4455
-dotnet run --project src\ApexHighlighter.Cli -c Release -- batch "D:\Recordings" --out "D:\Highlights"
 ```
-
-`batch` handles several recordings at once as two stations: scanning (CPU, OCR) and exporting (GPU, NVENC). As soon as one recording is scanned it goes to export, and the next one starts scanning, so both run at the same time. One failed recording does not stop the others. Options: `--scan-workers 1`, `--export-workers 2`, `--format`, `--no-export`.
-
-Unit tests (no FFmpeg or recordings needed):
-
-```powershell
-dotnet test tests\ApexHighlighter.Tests
-```
-
-To check a change end to end (build, tests, scan and export of real sample recordings), see [harness/README.md](harness/README.md).
 
 The built executable is `apexhl.exe` (in `src\ApexHighlighter.Cli\bin\<Debug or Release>\net11.0-windows10.0.19041.0\`), and you can run it directly, for example `apexhl scan "recording.mkv"`. Running it with no arguments lists every command. `recording.mkv` is just an example name; use the path to your own recording.
 
@@ -69,7 +58,7 @@ Put the OBS password for `obswatch` in the environment variable `APEXHL_OBS_PASS
 Settings → "OBS": tick "When OBS stops recording, import and scan the recording automatically", fill in the address (default `localhost`), port (default 4455) and password, then press "Test connection" to check.
 
 - In OBS, first go to Tools → WebSocket Server Settings → tick "Enable WebSocket server"; the password is under "Show Connect Info". OBS 28 or later is required.
-- As soon as recording stops, the app imports that file and starts scanning. If it is busy, the recording is queued, so several recordings in a row are never lost.
+- As soon as recording stops, the app imports that file and starts scanning. If a scan or export is already running, it waits for that to finish.
 - The app only listens for OBS notifications and never changes any OBS settings. If OBS isn't running it retries every 10 seconds; it stops retrying if the password is wrong.
 - The password is encrypted with Windows DPAPI before being saved in `settings.json`, so only your Windows account can decrypt it. It is never stored in plain text.
 
@@ -94,7 +83,6 @@ Settings → "OBS": tick "When OBS stops recording, import and scan the recordin
 - The same prompt showing on several frames in a row is merged into one. Events within 25 seconds of each other count as the same fight.
 - Start: from the first knock, search back for where loudness stays high (gunfire), limited to 8–25 seconds. End: 6 seconds after the last event (8 seconds more for a championship win).
 - Score: knock 1, elimination 1.5, squad wipe 2.5, kill leader 1, champion 4, assist 0.5. A hit seen on only one frame counts half. Fights scoring under 2 are not listed, and at most 3 are kept.
-- Second look: before a fight is suggested, prompts seen in fewer than 3 samples are read again around where they appeared, at 6 frames per second. Only prompts seen again count, at full weight. If the fight's score falls below 2 it is dropped ("second look failed") and the next fight is checked instead. A fight that just missed the threshold is promoted if its weak prompts turn out to be real. If the frames can't be read again, the first decision is kept. Turn it off with `--no-verify`.
 - Every scan saves a full log to `%LOCALAPPDATA%\ApexHighlighter\scans\`, with every OCR hit's text and position, plus skipped fights and why they were skipped, so you can check false positives.
 
 ## Export
@@ -109,9 +97,7 @@ Settings → "OBS": tick "When OBS stops recording, import and scan the recordin
 ```
 src/ApexHighlighter.Core   detection, FFmpeg, export (shared by UI and CLI)
 src/ApexHighlighter.App    WPF interface
-src/ApexHighlighter.Cli    command line: scan, export, batch, OCR test, A/V sync check
-tests/ApexHighlighter.Tests unit tests (keyword rules, clustering, second look, pipeline, export arguments, cache, queue…)
-harness/                   end-to-end verify script and Claude's fix loop
+src/ApexHighlighter.Cli    command line: scan, export, OCR test, A/V sync check
 acceptance/                acceptance notes and scan reports
 ```
 
@@ -121,3 +107,5 @@ Twitch download, YouTube upload, paid APIs.
 
 - Private YouTube upload needs you to create an OAuth client in Google Cloud and authorize this app. That is your own account setup, so it can only be hooked up after you do it.
 - Twitch download needs a separate download tool (such as yt-dlp).
+
+[Acceptance notes](acceptance/%E9%A9%97%E6%94%B6%E7%B4%80%E9%8C%84.en.md) | [Verification harness](harness/README.md)
