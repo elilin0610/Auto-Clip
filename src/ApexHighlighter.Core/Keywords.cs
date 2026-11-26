@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace ApexHighlighter.Core;
+namespace ApexHighlighter.Core;
 
 // =====================================================================================
 // Keywords.cs — 判斷一行 OCR 文字是不是擊殺提示

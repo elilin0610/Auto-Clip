@@ -10,7 +10,7 @@ namespace ApexHighlighter.App;
 // AppSettings.cs — 使用者設定的讀寫
 //
 // 存在 %LOCALAPPDATA%\ApexHighlighter\settings.json：
-// 介面語言、輸出資料夾、匯出格式、視窗位置大小、OBS 連線設定。
+// 介面語言、輸出資料夾、匯出格式與聲音選項、視窗位置大小、精華挑選參數、上次的遊戲語言、OBS 連線設定。
 // OBS 密碼用 Windows DPAPI 加密後才存，只有同一個 Windows 帳戶能解開，檔案裡沒有明碼。
 // =====================================================================================
 
@@ -27,6 +27,15 @@ public sealed class AppSettings
     public double? WindowWidth { get; set; }
     public double? WindowHeight { get; set; }
     public bool WindowMaximized { get; set; }
+    public bool MixAllTracks { get; set; }
+    public bool NormalizeLoudness { get; set; }
+
+    // Highlight selection (see ScanOptions).
+    public int MaxCandidates { get; set; } = 3;
+    public double MinScore { get; set; } = 2.0;
+    public double MaxClipLength { get; set; } = 120;
+    /// <summary>Game language found by the last confident scan; the next scan tries it first.</summary>
+    public string? LastGameLanguage { get; set; }
 
     // OBS (obs-websocket 5).
     public bool ObsEnabled { get; set; }

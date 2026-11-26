@@ -13,6 +13,8 @@ namespace ApexHighlighter.Core;
 //   ② 多個 worker 同時把畫面丟給 Windows OCR，讀出畫面上所有文字
 //   ③ KeywordMatcher 比對文字：是不是「擊倒」「淘汰」「全隊淘汰」…
 //   ④ 一邊掃一邊判斷遊戲語言（哪個語言的關鍵字命中最多），確定後只用那個語言，速度變快
+//      上次判斷出的語言只要少量證據就勝出；掃很久還判斷不出來，就直接用目前最像的
+//      語言確定、也量到提示大概在哪之後，大部分畫面只 OCR 那一塊（每隔幾張仍讀整張）
 //   ⑤ 去重複：同一個提示會在畫面停 2~3 秒，被讀到好幾次 → 合併成一個事件（Deduplicate）
 //   ⑥ 分群：相隔 25 秒內的事件算同一場交戰（Cluster），算分數，用音量找交戰開始時間
 //   ⑦ 分數夠高的前 3 名 → 候選片段
@@ -33,8 +35,8 @@ public sealed class Scanner
     // Pair = 「一個 OCR 引擎」配「一個語言的關鍵字規則」。例如 en@en-US、zh-Hant@zh-Hant-TW。
     // 還不知道遊戲語言時，每張畫面會用所有 Pair 都試一遍。
     private sealed record Pair(string Key, string OcrTag, KeywordMatcher Matcher, bool Native);
-    // 一張畫面用某個 Pair 讀到的結果：命中的提示、是不是在觀戰（觀戰時別人的擊殺不算）、HUD 固定文字數量。
-    private sealed record FrameHits(double Time, string PairKey, List<PromptHit> Hits, bool Spectating, int Anchors);
+    // 一張畫面用某個 Pair 讀到的結果：命中的提示、是不是在觀戰（觀戰時別人的擊殺不算）、HUD 固定文字數量、是不是整張都有讀。
+    private sealed record FrameHits(double Time, string PairKey, List<PromptHit> Hits, bool Spectating, int Anchors, bool Full);
 
     public async Task<ScanResult> ScanAsync(MediaInfo info, ScanOptions opt, IProgress<ScanProgress>? progress, CancellationToken ct)
     {
@@ -45,14 +47,38 @@ public sealed class Scanner
         var pairs = BuildPairs(opt.Language, result.Notes);
         if (pairs.Count == 0)
             throw new InvalidOperationException(Loc.T("err.noOcr"));
+        // 上次掃描判斷出的遊戲語言：只要一點點證據就能勝出，不用每種語言都試很久
+        var preferred = opt.PreferredLanguage is { } pl ? pairs.FirstOrDefault(p => p.Matcher.LanguageId == pl) : null;
 
         // 音量分析在背景同時跑，最後用來估計交戰從哪裡開始（槍聲變大的地方）
         var audioTask = AudioActivity.AnalyzeAsync(info, opt.AudioTrack, ct);
 
         // Language lock: before lock every frame is OCR'd with every (engine, rules) pair; afterwards only the winner.
         Pair? locked = pairs.Count == 1 ? pairs[0] : null;
+        bool forcedLock = false;
         var hitCount = pairs.ToDictionary(p => p.Key, _ => 0);
         var gate = new object();
+        Pair Best() => pairs.OrderByDescending(p => hitCount[p.Key]).ThenByDescending(p => p == preferred).ThenByDescending(p => p.Native).First();
+
+        // Region OCR: running box around every prompt read so far (fractions of the frame), in the locked language.
+        double bx0 = 1, by0 = 1, bx1 = 0, by1 = 0;
+        int boxHits = 0;
+        FrameRegion? region = null;
+        void Grow(IEnumerable<PromptHit> hs)
+        {
+            foreach (var h in hs)
+            {
+                bx0 = Math.Min(bx0, h.X); by0 = Math.Min(by0, h.Y);
+                bx1 = Math.Max(bx1, h.X + h.W); by1 = Math.Max(by1, h.Y + h.H);
+                boxHits++;
+            }
+            // Only trust the box once a few prompts agree, and only use it when it actually saves work.
+            if (opt.RegionOcr && boxHits >= 3)
+            {
+                var r = FrameRegion.Around(bx0, by0, bx1, by1, 0.08, 0.06, 0.35, 0.18);
+                region = r.Area < 0.6 ? r : null;
+            }
+        }
 
         // Channel 是一條「輸送帶」：一端放畫面（生產者），多個 worker 從另一端拿（消費者）。
         // Bounded = 輸送帶有長度上限，worker 來不及處理時，讀畫面那端會等，不會把記憶體塞爆。
@@ -60,6 +86,7 @@ public sealed class Scanner
         var collected = new List<FrameHits>();
         int framesDone = 0;
         int totalFrames = Math.Max(1, (int)(info.Duration * opt.SampleFps));
+        int fullEvery = Math.Max(1, opt.FullFrameEvery);
 
         var engineTags = pairs.Select(p => p.OcrTag).Distinct().ToList();
 
@@ -70,61 +97,84 @@ public sealed class Scanner
             var readers = engineTags.ToDictionary(t => t, OcrReader.Create);
             await foreach (var f in channel.Reader.ReadAllAsync(ct))
             {
-                // lock：多個 worker 會同時讀寫 locked / collected，要排隊進去，不然資料會亂掉
-                Pair? lk;
-                lock (gate) lk = locked;
-                // 語言確定了就只跑那一組；還沒確定就全部試
-                var active = lk != null ? [lk] : pairs;
-                var linesByTag = new Dictionary<string, List<OcrTextLine>>();
-                foreach (var tag in active.Select(a => a.OcrTag).Distinct())
-                    linesByTag[tag] = await readers[tag].ReadAsync(f.Bgra, f.Width, f.Height);
-
-                // ③ 每一行文字拿去比對關鍵字
-                var local = new List<FrameHits>();
-                foreach (var pair in active)
+                List<FrameHits> local;
+                try
                 {
-                    var lines = linesByTag[pair.OcrTag];
-                    bool spect = lines.Any(l => pair.Matcher.IsSpectating(l.Text));
-                    int anchors = lk == null ? lines.Count(l => pair.Matcher.IsAnchor(l.Text)) : 0;
-                    var hits = new List<PromptHit>();
-                    foreach (var l in lines)
-                    {
-                        var m = pair.Matcher.Match(l.Text);
-                        if (m is { } mm) hits.Add(new PromptHit(f.Time, mm.Kind, l.Text, mm.After, l.X, l.Y, l.W, l.H));
-                    }
-                    local.Add(new FrameHits(f.Time, pair.Key, hits, spect, anchors));
-                }
+                    // lock：多個 worker 會同時讀寫 locked / collected，要排隊進去，不然資料會亂掉
+                    Pair? lk;
+                    FrameRegion? roi;
+                    lock (gate) { lk = locked; roi = region; }
+                    // 語言確定了就只跑那一組；還沒確定就全部試
+                    var active = lk != null ? [lk] : pairs;
+                    // 語言確定、也知道提示大概在哪之後，大部分畫面只讀那一塊；每隔幾張還是讀整張，才找得到出現在新位置的提示
+                    bool full = lk == null || roi == null || f.Index % fullEvery == 0;
+                    var linesByTag = new Dictionary<string, List<OcrTextLine>>();
+                    foreach (var tag in active.Select(a => a.OcrTag).Distinct())
+                        linesByTag[tag] = await readers[tag].ReadAsync(f.Bgra, f.Width, f.Height, full ? null : roi);
 
+                    // ③ 每一行文字拿去比對關鍵字
+                    local = new List<FrameHits>();
+                    foreach (var pair in active)
+                    {
+                        var lines = linesByTag[pair.OcrTag];
+                        bool spect = full && lines.Any(l => pair.Matcher.IsSpectating(l.Text));
+                        int anchors = lk == null ? lines.Count(l => pair.Matcher.IsAnchor(l.Text)) : 0;
+                        var hits = new List<PromptHit>();
+                        foreach (var l in lines)
+                        {
+                            var m = pair.Matcher.Match(l.Text);
+                            if (m is { } mm) hits.Add(new PromptHit(f.Time, mm.Kind, l.Text, mm.After, l.X, l.Y, l.W, l.H));
+                        }
+                        local.Add(new FrameHits(f.Time, pair.Key, hits, spect, anchors, full));
+                    }
+                }
+                finally { f.Release(); }   // 畫面的記憶體還給 pool
+
+                int done;
+                List<PromptHit>? snap = null;
                 lock (gate)
                 {
                     collected.AddRange(local);
-                    // ④ 判斷遊戲語言：某個語言累積命中 ≥ 6 次，而且是第二名的 2 倍以上，就鎖定它
+                    // ④ 判斷遊戲語言：某個語言累積命中 ≥ 6 次（上次的語言只要 2 次），而且是第二名的 2 倍以上，就鎖定它
                     if (locked == null)
                     {
                         // Prompts and always-on HUD text (e.g. "SQUADS LEFT") both count as evidence for the language.
                         foreach (var fh in local) if (!fh.Spectating) hitCount[fh.PairKey] += fh.Hits.Count + fh.Anchors;
-                        var best = pairs.OrderByDescending(p => hitCount[p.Key]).ThenByDescending(p => p.Native).First();
+                        var best = Best();
                         var second = pairs.Where(p => p != best).Select(p => hitCount[p.Key]).DefaultIfEmpty(0).Max();
-                        if (hitCount[best.Key] >= 6 && hitCount[best.Key] >= second * 2) locked = best;
-                    }
-                    framesDone++;
-                }
-                // 每 10 張回報一次進度（介面上的進度條和黃色刻度就是靠這個）
-                if (framesDone % 10 == 0)
-                {
-                    List<PromptHit>? snap = null;
-                    lock (gate)
-                        if (locked != null)
+                        int need = best == preferred ? 2 : 6;
+                        if (hitCount[best.Key] >= need && hitCount[best.Key] >= second * 2) locked = best;
+                        // 掃了很久還判斷不出來（幾乎沒有字的場次）→ 直接用目前最像的，不要整場都用每種語言讀
+                        else if (opt.LanguageProbeFrames > 0 && framesDone + 1 >= opt.LanguageProbeFrames)
                         {
-                            var key = locked.Key;
-                            snap = collected.Where(c => c.PairKey == key && !c.Spectating).SelectMany(c => c.Hits).OrderBy(h => h.Time).ToList();
+                            locked = hitCount[best.Key] == 0 && preferred != null ? preferred : best;
+                            forcedLock = true;
                         }
+                        if (locked != null)
+                            Grow(collected.Where(c => c.PairKey == locked.Key && !c.Spectating).SelectMany(c => c.Hits));
+                    }
+                    else
+                    {
+                        foreach (var fh in local) if (fh.PairKey == locked.Key && !fh.Spectating) Grow(fh.Hits);
+                    }
+                    done = ++framesDone;
+                    // 每 10 張回報一次進度（介面上的進度條和黃色刻度就是靠這個）
+                    if (done % 10 == 0 && locked != null)
+                    {
+                        var key = locked.Key;
+                        snap = collected.Where(c => c.PairKey == key && !c.Spectating).SelectMany(c => c.Hits).OrderBy(h => h.Time).ToList();
+                    }
+                }
+                if (done % 10 == 0)
+                {
+                    Pair? lkNow;
+                    lock (gate) lkNow = locked;
                     progress?.Report(new ScanProgress
                     {
                         Hits = snap,
-                        Fraction = Math.Min(1, framesDone / (double)totalFrames),
+                        Fraction = Math.Min(1, done / (double)totalFrames),
                         Message = Loc.F("progress.scanning", TimeFmt.Hms(f.Time), TimeFmt.Hms(info.Duration))
-                                  + (locked != null ? Loc.F("progress.lang", locked.Matcher.LanguageId) : Loc.T("progress.detecting")),
+                                  + (lkNow != null ? Loc.F("progress.lang", lkNow.Matcher.LanguageId) : Loc.T("progress.detecting")),
                     });
                 }
             }
@@ -143,19 +193,20 @@ public sealed class Scanner
         await Task.WhenAll(workers);        // 等所有 worker 做完
         result.FramesScanned = framesDone;
 
-        // Final language choice (may still be null if the match had almost no prompts).
-        var winner = locked ?? pairs.OrderByDescending(p => hitCount[p.Key]).ThenByDescending(p => p.Native).First();
+        // Final language choice (may still be undecided if the match had almost no prompts).
+        var winner = locked ?? Best();
         result.Language = winner.Matcher.LanguageId;
         result.OcrLanguage = winner.OcrTag;
-        result.LanguageConfident = locked != null || pairs.Count == 1;
+        result.LanguageConfident = (locked != null && !forcedLock) || pairs.Count == 1;
         result.LanguageVerified = _cfg.Languages.First(l => l.Id == winner.Matcher.LanguageId).Verified;
-        if (locked == null && pairs.Count > 1)
+        if (!result.LanguageConfident)
             result.Notes.Add(Loc.F("note.langUncertain", winner.Matcher.LanguageId, hitCount[winner.Key]));
         if (!result.LanguageVerified)
             result.Notes.Add(Loc.F("note.langUnverified", winner.Matcher.LanguageId));
+        result.RegionFrames = collected.Count(c => c.PairKey == winner.Key && !c.Full);
 
         // 只留下勝出語言的結果，並丟掉觀戰中的畫面
-        var mine = collected.Where(c => c.PairKey == winner.Key).OrderBy(c => c.Time).ToList();
+        var mine = MarkSpectating(collected.Where(c => c.PairKey == winner.Key).OrderBy(c => c.Time).ToList());
         result.SpectatingFramesSkipped = mine.Count(m => m.Spectating);
         result.Hits = mine.Where(m => !m.Spectating).SelectMany(m => m.Hits).OrderBy(h => h.Time).ToList();
         if (MedianPosition(result.Hits) is { } pos) { result.PromptX = pos.X; result.PromptY = pos.Y; }
@@ -248,6 +299,8 @@ public sealed class Scanner
     //          只被讀到一次的事件可信度低，算半分
     //   開始 = 從第一個提示往回找到聲音開始變吵的地方（限制在 8~25 秒前）；沒音軌就固定往前約 16 秒
     //   結束 = 最後一個提示 + 6 秒（成為冠軍再多 8 秒）
+    //   太長（超過 MaxClipLength）→ 從中間最長的空檔切開；切不開就只留最短的片頭
+    //   相鄰兩段重疊（第二段的片頭蓋到第一段的片尾）→ 在中間切開，兩段不會有重複畫面
     internal List<Candidate> Cluster(List<GameEvent> events, AudioActivity? audio, double duration, ScanOptions opt)
     {
         // 依時間排好，跟上一個事件相隔 ≤ 25 秒就放同一群
@@ -257,20 +310,43 @@ public sealed class Scanner
             if (groups.Count > 0 && e.Time - groups[^1][^1].LastSeen <= opt.MergeGap) groups[^1].Add(e);
             else groups.Add([e]);
         }
+        if (opt.MaxClipLength > 0)
+            groups = groups.SelectMany(g => SplitLong(g, opt)).ToList();
 
-        var all = new List<Candidate>();
+        var spans = new List<(List<GameEvent> G, double Start, double End)>();
         foreach (var g in groups)
         {
-            double score = 0;
-            foreach (var e in g)
-                score += _cfg.Weight(e.Kind) * (e.Samples >= 2 ? 1.0 : 0.5);
-
             double first = g[0].Time, last = g.Max(e => e.LastSeen);
             double start = audio != null
                 ? audio.EstimateFightStart(first, opt.MinPreRoll, opt.MaxPreRoll)
                 : Math.Max(0, first - (opt.MinPreRoll + opt.MaxPreRoll) / 2);
-            double post = opt.PostRoll + (g.Any(e => e.Kind == EventKind.Champion) ? 8 : 0);
-            double end = Math.Min(duration, last + post);
+            double end = Math.Min(duration, last + PostRoll(g, opt));
+            // A fight that can't be split any further: keep only the minimum lead-in so it fits if it can.
+            if (opt.MaxClipLength > 0 && end - start > opt.MaxClipLength)
+                start = Math.Max(start, Math.Min(first - opt.MinPreRoll, end - opt.MaxClipLength));
+            spans.Add((g, Math.Max(0, start), end));
+        }
+
+        // No two clips share footage: where one's lead-in reaches into the previous one's tail, cut in between
+        // (never closer than 1 s to either fight's own prompts).
+        for (int i = 1; i < spans.Count; i++)
+        {
+            var (pg, ps, pe) = spans[i - 1];
+            var (g, s, e) = spans[i];
+            if (s >= pe) continue;
+            double prevLast = pg.Max(x => x.LastSeen), first = g[0].Time;
+            double cut = Math.Clamp((s + pe) / 2, prevLast + 1, Math.Max(prevLast + 1, first - 1));
+            spans[i - 1] = (pg, ps, Math.Min(pe, cut));
+            spans[i] = (g, Math.Max(s, cut), e);
+        }
+
+        var all = new List<Candidate>();
+        foreach (var (g, start, end) in spans)
+        {
+            double score = 0;
+            foreach (var e in g)
+                score += _cfg.Weight(e.Kind) * (e.Samples >= 2 ? 1.0 : 0.5);
+            double first = g[0].Time, last = g.Max(e => e.LastSeen);
 
             // 不合格的情況：分數太低（但拿冠軍一定留）、只有助攻
             bool champion = g.Any(e => e.Kind == EventKind.Champion && e.Samples >= 2);
@@ -286,7 +362,7 @@ public sealed class Scanner
         }
 
         // Keep only the top N; the rest are marked so the report still explains why they were dropped.
-        var keep = all.Where(c => c.Accepted).OrderByDescending(c => c.Score).ThenBy(c => c.Start).Take(opt.MaxCandidates).ToHashSet();
+        var keep = all.Where(c => c.Accepted).OrderByDescending(c => c.Score).ThenBy(c => c.Start).Take(Math.Max(0, opt.MaxCandidates)).ToHashSet();
         return all.Select(c => c.Accepted && !keep.Contains(c)
             ? new Candidate
             {
@@ -294,6 +370,47 @@ public sealed class Scanner
                 LeadIn = c.LeadIn, LeadInFromAudio = c.LeadInFromAudio, Reject = RejectKind.NotTopN, Threshold = c.Threshold, TopN = c.TopN,
             }
             : c).OrderBy(c => c.Start).ToList();
+    }
+
+    private static double PostRoll(List<GameEvent> g, ScanOptions opt) =>
+        opt.PostRoll + (g.Any(e => e.Kind == EventKind.Champion) ? 8 : 0);
+
+    /// <summary>
+    /// Splits a fight whose clip would be longer than MaxClipLength at its longest gap between prompts, recursively.
+    /// The length is estimated with the maximum lead-in, so a part may come out a little shorter than the limit, never longer
+    /// (apart from a single unbroken stretch of prompts, which is trimmed in <see cref="Cluster"/>).
+    /// </summary>
+    internal static IEnumerable<List<GameEvent>> SplitLong(List<GameEvent> g, ScanOptions opt)
+    {
+        double Length(List<GameEvent> x) => x.Max(e => e.LastSeen) - x[0].Time + opt.MaxPreRoll + PostRoll(x, opt);
+        if (g.Count < 2 || Length(g) <= opt.MaxClipLength) { yield return g; yield break; }
+        int cut = 1;
+        double best = double.MinValue;
+        for (int i = 1; i < g.Count; i++)
+        {
+            double gap = g[i].Time - g.Take(i).Max(e => e.LastSeen);
+            if (gap > best) { best = gap; cut = i; }
+        }
+        foreach (var part in SplitLong(g.Take(cut).ToList(), opt)) yield return part;
+        foreach (var part in SplitLong(g.Skip(cut).ToList(), opt)) yield return part;
+    }
+
+    /// <summary>
+    /// "Spectating" text can only be seen on fully read frames, so a partly read frame takes the state of the nearest fully read one.
+    /// </summary>
+    private static List<FrameHits> MarkSpectating(List<FrameHits> frames)
+    {
+        var fullTimes = frames.Where(f => f.Full).Select(f => (f.Time, f.Spectating)).ToList();
+        if (fullTimes.Count == 0) return frames;
+        var res = new List<FrameHits>(frames.Count);
+        int j = 0;
+        foreach (var f in frames)
+        {
+            if (f.Full) { res.Add(f); continue; }
+            while (j + 1 < fullTimes.Count && Math.Abs(fullTimes[j + 1].Time - f.Time) <= Math.Abs(fullTimes[j].Time - f.Time)) j++;
+            res.Add(f with { Spectating = fullTimes[j].Spectating });
+        }
+        return res;
     }
 
     private static (double X, double Y)? MedianPosition(List<PromptHit> hits)

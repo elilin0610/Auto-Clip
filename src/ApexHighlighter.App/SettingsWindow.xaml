@@ -40,6 +40,28 @@
 
         <Border BorderBrush="#2E323B" BorderThickness="0,1,0,0" Margin="0,18,0,14"/>
 
+        <TextBlock Text="{l:Tr set.scan}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="80"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Style="{StaticResource Label}" Text="{l:Tr set.maxClips}"/>
+            <TextBox Grid.Column="1" x:Name="MaxClipsBox" AutomationProperties.Name="{l:Tr set.maxClips}"/>
+            <TextBlock Grid.Row="1" Style="{StaticResource Label}" Text="{l:Tr set.minScore}" Margin="0,6,0,0"/>
+            <TextBox Grid.Row="1" Grid.Column="1" x:Name="MinScoreBox" Margin="0,6,0,0" AutomationProperties.Name="{l:Tr set.minScore}"/>
+            <TextBlock Grid.Row="2" Style="{StaticResource Label}" Text="{l:Tr set.maxLen}" Margin="0,6,0,0"/>
+            <TextBox Grid.Row="2" Grid.Column="1" x:Name="MaxLenBox" Margin="0,6,0,0" AutomationProperties.Name="{l:Tr set.maxLen}"/>
+        </Grid>
+        <TextBlock Text="{l:Tr set.scanNote}" TextWrapping="Wrap" Foreground="#9AA1AE" FontSize="12" Margin="0,8,0,0"/>
+
+        <Border BorderBrush="#2E323B" BorderThickness="0,1,0,0" Margin="0,18,0,14"/>
+
         <TextBlock Text="{l:Tr set.obs}" FontWeight="SemiBold" Margin="0,0,0,8"/>
         <CheckBox x:Name="ObsEnabledBox" Foreground="#E6E8EE" Margin="0,0,0,10">
             <TextBlock Text="{l:Tr set.obsEnable}" TextWrapping="Wrap"/>

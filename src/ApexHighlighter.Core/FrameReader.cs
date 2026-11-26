@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics;
 using System.Globalization;
 
@@ -10,9 +11,21 @@ namespace ApexHighlighter.Core;
 // 輸出原始像素（BGRA，每個像素 4 bytes），用 IAsyncEnumerable 一張一張交給 Scanner。
 // 預設讓 FFmpeg 自動挑可用的硬體解碼（-hwaccel auto），比較快；不能用時它會退回 CPU。
 // 不寫暫存檔，也不會動到原始錄影。
+// 畫面的記憶體從 ArrayPool 借（每張約 3.7 MB），用完由 Scanner 呼叫 Release() 還回去，不用每張都重新配置。
 // =====================================================================================
 
-public sealed record Frame(int Index, double Time, byte[] Bgra, int Width, int Height);
+/// <summary>One sampled frame. <see cref="Bgra"/> is rented and may be longer than Width×Height×4; call <see cref="Release"/> when done.</summary>
+public sealed record Frame(int Index, double Time, byte[] Bgra, int Width, int Height)
+{
+    private int _released;
+    public int Length => Width * Height * 4;
+
+    /// <summary>Gives the pixel buffer back to the pool. Safe to call more than once; the frame must not be used afterwards.</summary>
+    public void Release()
+    {
+        if (Interlocked.Exchange(ref _released, 1) == 0) ArrayPool<byte>.Shared.Return(Bgra);
+    }
+}
 
 /// <summary>Streams downscaled BGRA frames out of ffmpeg at a fixed sample rate (no temp files, source untouched).</summary>
 public static class FrameReader
@@ -49,15 +62,19 @@ public static class FrameReader
         {
             while (true)
             {
-                var buf = new byte[frameBytes];
+                var buf = ArrayPool<byte>.Shared.Rent(frameBytes);
                 int read = 0;
-                while (read < frameBytes)
+                try
                 {
-                    int n = await stream.ReadAsync(buf.AsMemory(read, frameBytes - read), ct);
-                    if (n == 0) break;
-                    read += n;
+                    while (read < frameBytes)
+                    {
+                        int n = await stream.ReadAsync(buf.AsMemory(read, frameBytes - read), ct);
+                        if (n == 0) break;
+                        read += n;
+                    }
                 }
-                if (read < frameBytes) break;
+                catch { ArrayPool<byte>.Shared.Return(buf); throw; }
+                if (read < frameBytes) { ArrayPool<byte>.Shared.Return(buf); break; }
                 yield return new Frame(index, index / sampleFps, buf, w, h);
                 index++;
             }

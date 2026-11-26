@@ -30,6 +30,8 @@ string Opt(string name, string def)
     return i >= 0 && i + 1 < args.Length ? args[i + 1] : def;
 }
 
+bool Flag(string name) => Array.IndexOf(args, name) >= 0;
+
 // CLI output stays in Traditional Chinese unless --ui-lang en|zh-Hant|ja is given.
 Loc.Set(Opt("--ui-lang", "zh-Hant"));
 
@@ -78,7 +80,12 @@ async Task<int> Scan()
         SampleFps = double.Parse(Opt("--fps", "2"), CultureInfo.InvariantCulture),
         OcrWidth = int.Parse(Opt("--width", "1280")),
         AudioTrack = int.Parse(Opt("--track", info.DefaultAudioTrack().ToString())),
+        MaxCandidates = int.Parse(Opt("--max", "3")),
+        MinScore = double.Parse(Opt("--min-score", "2"), CultureInfo.InvariantCulture),
+        MaxClipLength = double.Parse(Opt("--max-len", "120"), CultureInfo.InvariantCulture),
+        RegionOcr = !Flag("--no-region"),
     };
+    if (Opt("--prefer-lang", "") is { Length: > 0 } pref) opt.PreferredLanguage = pref;
     if (Opt("--workers", "") is { Length: > 0 } wk) opt.Workers = int.Parse(wk);
 
     ShowMediaInfo(info);
@@ -102,6 +109,7 @@ async Task<int> Scan()
         });
 
     var (json, txt) = ScanReport.Save(result, Opt("--report-dir", ScanReport.DefaultFolder));
+    ScanCache.Save(result);   // 介面之後打開同一支錄影，就直接讀回這次的結果
 
     var lang = result.Language ?? "?";
     AnsiConsole.MarkupLine($"遊戲語言 [{Accent}]{Markup.Escape(lang)}[/]{(result.LanguageConfident ? "" : " [grey](提示太少，不太確定)[/]")}" +
@@ -153,7 +161,7 @@ async Task<int> Scan()
 
 async Task<int> Export()
 {
-    if (!Need(5, "apexhl export <錄影檔> <開始> <結束> <輸出.mp4> [--format landscape|vcrop|vfit]")) return 2;
+    if (!Need(5, "apexhl export <錄影檔> <開始> <結束> <輸出.mp4> [--format landscape|vcrop|vfit] [--mix] [--loudnorm]")) return 2;
     var info = await MediaInfo.ProbeAsync(InputFile(args[1]), cts.Token);
     if (!TimeFmt.TryParse(args[2], out var s) || !TimeFmt.TryParse(args[3], out var e))
     {
@@ -164,6 +172,8 @@ async Task<int> Export()
     {
         AudioTrack = int.Parse(Opt("--track", "0")),
         Format = Opt("--format", "landscape") switch { "vcrop" => ExportFormat.VerticalCrop, "vfit" => ExportFormat.VerticalFit, _ => ExportFormat.Landscape },
+        MixAllTracks = Flag("--mix"),
+        NormalizeLoudness = Flag("--loudnorm"),
     };
     var (ow, oh) = Exporter.OutputSize(info.Width, info.Height, opt.Format);
     AnsiConsole.MarkupLine($"[{Accent}]{Markup.Escape(Path.GetFileName(info.Path))}[/]  {TimeFmt.Hms(s)} – {TimeFmt.Hms(e)}  →  {ow}×{oh}");
@@ -349,8 +359,8 @@ static void ShowHelp()
     AnsiConsole.Write(new Rule($"[bold {Accent}]apexhl[/] [grey]Apex 精華挑片 · 命令列版[/]").LeftJustified());
     var t = new Table().Border(TableBorder.None).HideHeaders()
         .AddColumn(new TableColumn("").NoWrap().PadRight(3)).AddColumn("");
-    t.AddRow($"[{Accent}]scan[/] <錄影檔>", "找出最多 3 段精華\n[grey]--lang auto|en|zh-Hant…  --fps 2  --width 1280  --workers N  --track N[/]");
-    t.AddRow($"[{Accent}]export[/] <錄影檔> <開始> <結束> <輸出.mp4>", "剪出一段\n[grey]--format landscape|vcrop|vfit  --track N[/]");
+    t.AddRow($"[{Accent}]scan[/] <錄影檔>", "找出精華（預設最多 3 段）\n[grey]--lang auto|en|zh-Hant…  --prefer-lang en  --fps 2  --width 1280  --workers N  --track N\n--max 3  --min-score 2  --max-len 120（0 = 不限）  --no-region（每張都讀整個畫面）[/]");
+    t.AddRow($"[{Accent}]export[/] <錄影檔> <開始> <結束> <輸出.mp4>", "剪出一段\n[grey]--format landscape|vcrop|vfit  --track N  --mix（混合所有音軌）  --loudnorm（音量標準化）[/]");
     t.AddRow($"[{Accent}]thumb[/] <錄影檔> <秒> <輸出.jpg>", "存一張縮圖  [grey]--width 192[/]");
     t.AddRow($"[{Accent}]obswatch[/]", "等 OBS 停止錄影  [grey]--host localhost --port 4455，密碼放 APEXHL_OBS_PASSWORD[/]");
     t.AddRow($"[{Accent}]ocr[/] <錄影檔> <秒>", "列出該時間畫面上 OCR 讀到的字");

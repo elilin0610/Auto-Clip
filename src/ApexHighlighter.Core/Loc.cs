@@ -389,5 +389,47 @@ public static class Loc
             "スキャン中…これまでに {0} 件の表示を読み取りました。タイムラインの黄色い目盛りが位置です。スキャン中でもクリックして確認できます。"],
         ["tl.dragStart"] = ["Drag to move the start", "拖曳調整起點", "ドラッグで開始位置を調整"],
         ["tl.dragEnd"] = ["Drag to move the end", "拖曳調整終點", "ドラッグで終了位置を調整"],
+        // ── Scan cache / queue / batch export / new options ──
+        ["log.cacheLoaded"] = [
+            "Loaded the previous scan of this recording ({0}), no rescan needed. Press \"Find highlights\" to scan it again.",
+            "已讀回這支錄影上次的掃描結果（{0}），不用重掃。想重掃請按「掃描精華」。",
+            "この録画の前回のスキャン結果（{0}）を読み込みました。再スキャンは不要です。やり直すには「ハイライトを探す」を押してください。"],
+        ["log.queued"] = ["Queued: {0} ({1} waiting).", "已排入佇列：{0}（共 {1} 支等待中）。", "キューに追加：{0}（待機中 {1} 本）。"],
+        ["log.batch"] = [
+            "{0} recordings will be scanned one after another. Open any of them later to see its results right away.",
+            "{0} 支錄影會依序掃描。之後打開任一支，就會直接顯示它的結果。",
+            "{0} 本の録画を順番にスキャンします。あとでどれを開いても結果がすぐ表示されます。"],
+        ["log.exportOneFailed"] = ["Clip #{0} failed, continuing with the rest: {1}", "片段 #{0} 匯出失敗，繼續匯出其他片段：{1}", "クリップ #{0} の書き出しに失敗しました。残りを続けます：{1}"],
+        ["st.exportPartial"] = [
+            "Exported {0} of {1} clips; {2} failed (see the log).",
+            "已匯出 {1} 段中的 {0} 段，{2} 段失敗（請看下方記錄）。",
+            "{1} 本中 {0} 本を書き出しました。{2} 本は失敗しました（ログを確認してください）。"],
+        ["rep.region"] = [
+            "{0} of {1} frames were read only around the prompt area (faster); the rest were read whole.",
+            "{1} 張畫面中有 {0} 張只讀提示附近的區域（比較快），其餘整張讀。",
+            "{1} フレーム中 {0} フレームは表示付近の領域だけを読み取りました（高速）。残りは全体を読み取りました。"],
+        ["exp.mix"] = ["Mix all audio tracks", "混合所有音軌", "すべての音声トラックをミックス"],
+        ["exp.mixTip"] = [
+            "For OBS recordings with game sound and microphone on separate tracks: puts them all in the clip.",
+            "OBS 把遊戲聲和麥克風錄在不同音軌時，勾這個就會全部混進片段裡。",
+            "OBS でゲーム音とマイクを別トラックに録音している場合、すべてをクリップに入れます。"],
+        ["exp.loudnorm"] = ["Even out loudness (−14 LUFS)", "音量標準化（−14 LUFS）", "音量を均一化（−14 LUFS）"],
+        ["exp.loudnormTip"] = [
+            "Brings the clip to the loudness YouTube plays at, so it is not much quieter or louder than other videos.",
+            "把片段調到 YouTube 播放時的標準音量，不會比別的影片小聲或大聲很多。",
+            "YouTube の再生基準の音量に合わせ、他の動画より極端に小さく・大きくならないようにします。"],
+        ["exp.previewTrack"] = [
+            "Preview plays the file's default audio track; the export uses the track chosen here.",
+            "預覽只會播檔案的預設音軌；匯出用的是這裡選的音軌。",
+            "プレビューはファイルの既定の音声トラックを再生します。書き出しにはここで選んだトラックを使います。"],
+        ["dir.default"] = ["Apex highlights", "Apex精華", "Apexハイライト"],
+        ["set.scan"] = ["Highlights", "精華挑選", "ハイライトの選び方"],
+        ["set.maxClips"] = ["Clips per recording (max)", "每支錄影最多幾段", "録画ごとの最大クリップ数"],
+        ["set.minScore"] = ["Minimum score", "最低分數", "最低スコア"],
+        ["set.maxLen"] = ["Longest clip (s, 0 = no limit)", "片段最長秒數（0 = 不限）", "クリップの最大長（秒、0 = 無制限）"],
+        ["set.scanNote"] = [
+            "Score: knock 1, elimination 1.5, squad wipe 2.5, kill leader 1, champion 4, assist 0.5. Longer streams can use more clips. A fight longer than the limit is split at its longest pause. Applies from the next scan.",
+            "分數：擊倒 1、淘汰 1.5、全隊淘汰 2.5、擊殺王 1、冠軍 4、助攻 0.5。長時間直播可以把段數調高。超過最長秒數的交戰會從中間最長的空檔切開。下次掃描生效。",
+            "スコア：ダウン 1、キル 1.5、部隊全滅 2.5、キルリーダー 1、チャンピオン 4、アシスト 0.5。長時間の配信ではクリップ数を増やせます。最大長を超える交戦は最も長い間で分割します。次回のスキャンから反映されます。"],
     };
 }

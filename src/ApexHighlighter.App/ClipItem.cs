@@ -3,7 +3,8 @@ using System.Runtime.CompilerServices;
 using System.Windows.Media;
 using ApexHighlighter.Core;
 
-namespace ApexHighlighter.App;
+namespace ApexHighlighter.App;
+
 
 // =====================================================================================
 // ClipItem.cs — 片段清單裡的「一張卡片」
@@ -69,11 +70,19 @@ public sealed class ClipItem : INotifyPropertyChanged
 
     public bool Keep { get => _keep; set { _keep = value; Raise(); } }
 
+    /// <summary>Moves the start, never past the end (stays at least 1 s long) or outside the recording.</summary>
+    public void MoveStart(double t, double duration) => Start = ClipRange.ClampStart(t, End, duration);
+
+    /// <summary>Moves the end, never before the start (stays at least 1 s long) or past the end of the recording.</summary>
+    public void MoveEnd(double t, double duration) => End = ClipRange.ClampEnd(t, Start, duration);
+
     public void SetStatus(ClipStatus status, string file = "")
     {
         _status = status; _statusFile = file;
         Raise(nameof(Status));
     }
+
+    public bool IsExporting => _status == ClipStatus.Exporting;
 
     public string Status => _status switch
     {

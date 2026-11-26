@@ -81,32 +81,35 @@ public sealed record MediaInfo(string Path, double Duration, int Width, int Heig
     {
         if (AudioTracks.Count <= 1) return this;
         var start = Math.Max(0, Duration / 2 - 30);
-        var list = new List<AudioTrack>();
-        foreach (var t in AudioTracks)
-        {
-            double? mean = null;
-            try
-            {
-                var psi = new System.Diagnostics.ProcessStartInfo(FFmpegLocator.FFmpeg)
-                { RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-                foreach (var a in new[] { "-hide_banner", "-nostats", "-ss", start.ToString(CultureInfo.InvariantCulture), "-t", "60", "-i", Path,
-                             "-map", $"0:a:{t.Index}", "-af", "volumedetect", "-f", "null", "-" })
-                    psi.ArgumentList.Add(a);
-                using var p = System.Diagnostics.Process.Start(psi)!;
-                var err = await p.StandardError.ReadToEndAsync(ct);
-                await p.WaitForExitAsync(ct);
-                var idx = err.LastIndexOf("mean_volume:", StringComparison.Ordinal);
-                if (idx >= 0)
-                {
-                    var tail = err[(idx + 12)..].Trim().Split(' ')[0];
-                    if (double.TryParse(tail, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) mean = v;
-                }
-            }
-            catch (OperationCanceledException) { throw; }
-            catch { }
-            list.Add(t with { MeanVolumeDb = mean });
-        }
+        // 每條音軌各開一個 ffmpeg 同時量（以前是一條量完才量下一條）
+        var list = await Task.WhenAll(AudioTracks.Select(t => MeasureAsync(t, start, ct)));
         return this with { AudioTracks = list };
+    }
+
+    private async Task<AudioTrack> MeasureAsync(AudioTrack t, double start, CancellationToken ct)
+    {
+        double? mean = null;
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(FFmpegLocator.FFmpeg)
+            { RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+            foreach (var a in new[] { "-hide_banner", "-nostats", "-ss", start.ToString(CultureInfo.InvariantCulture), "-t", "60", "-i", Path,
+                         "-map", $"0:a:{t.Index}", "-af", "volumedetect", "-f", "null", "-" })
+                psi.ArgumentList.Add(a);
+            using var p = System.Diagnostics.Process.Start(psi)!;
+            using var reg = ct.Register(() => { try { p.Kill(true); } catch { } });
+            var err = await p.StandardError.ReadToEndAsync(ct);
+            await p.WaitForExitAsync(ct);
+            var idx = err.LastIndexOf("mean_volume:", StringComparison.Ordinal);
+            if (idx >= 0)
+            {
+                var tail = err[(idx + 12)..].Trim().Split(' ')[0];
+                if (double.TryParse(tail, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) mean = v;
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { }
+        return t with { MeanVolumeDb = mean };
     }
 
     /// <summary>Default export track: first track unless it is near-silent and another track has sound.</summary>

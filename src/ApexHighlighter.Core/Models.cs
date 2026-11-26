@@ -1,4 +1,4 @@
-namespace ApexHighlighter.Core;
+namespace ApexHighlighter.Core;
 
 // =====================================================================================
 // Models.cs — 各處共用的資料型別（只裝資料，幾乎沒有邏輯）
@@ -18,6 +18,18 @@ public sealed record PromptHit(double Time, EventKind Kind, string Text, string 
 public sealed record GameEvent(double Time, double LastSeen, EventKind Kind, string Text, int Samples);
 
 public enum RejectKind { None, LowScore, AssistOnly, NotTopN }
+
+/// <summary>Keeps a clip's start before its end (at least <see cref="MinLength"/> apart) and inside the recording.</summary>
+public static class ClipRange
+{
+    public const double MinLength = 1.0;
+
+    public static double ClampStart(double t, double end, double duration) =>
+        Math.Clamp(t, 0, Math.Max(0, Math.Min(end, duration) - MinLength));
+
+    public static double ClampEnd(double t, double start, double duration) =>
+        Math.Clamp(t, Math.Min(Math.Max(0, start) + MinLength, duration), Math.Max(0, duration));
+}
 
 /// <summary>One fight. Text properties are computed in the current interface language.</summary>
 public sealed class Candidate
@@ -61,6 +73,22 @@ public sealed class ScanOptions
     public int OcrWidth { get; set; } = 1280;
     /// <summary>"auto" or a language id from keywords.json (en, zh-Hant…).</summary>
     public string Language { get; set; } = "auto";
+    /// <summary>
+    /// With Language = "auto": the game language found last time (keywords.json id), or null. It only needs a little
+    /// evidence to win, so a match with few prompts is not OCR'd with every installed language for its whole length.
+    /// </summary>
+    public string? PreferredLanguage { get; set; }
+    /// <summary>
+    /// If the language is still undecided after this many frames, the best one so far is taken (the preferred one on a tie),
+    /// so a match with almost no text costs at most this many multi-language frames. 0 = never force.
+    /// </summary>
+    public int LanguageProbeFrames { get; set; } = 240;
+    /// <summary>
+    /// Once the language is known and prompts have been seen, OCR only the part of the frame where prompts appeared
+    /// (plus a margin), with a full frame every <see cref="FullFrameEvery"/> samples so prompts in new places are still found.
+    /// </summary>
+    public bool RegionOcr { get; set; } = true;
+    public int FullFrameEvery { get; set; } = 4;
     public int Workers { get; set; } = Math.Clamp(Environment.ProcessorCount / 2, 2, 8);
     public bool HardwareDecode { get; set; } = true;
     /// <summary>Audio track used to estimate when the fight started.</summary>
@@ -74,6 +102,11 @@ public sealed class ScanOptions
     /// <summary>Minimum cluster score (Knock 1, Elimination 1.5, Squad wipe 2.5…). Below this the fight is not suggested.</summary>
     public double MinScore { get; set; } = 2.0;
     public int MaxCandidates { get; set; } = 3;
+    /// <summary>
+    /// Longest suggested clip in seconds. A longer fight is split at its biggest quiet gap; one that can't be split keeps
+    /// only the minimum lead-in. 0 = no limit.
+    /// </summary>
+    public double MaxClipLength { get; set; } = 120;
 }
 
 public sealed class ScanProgress
@@ -101,6 +134,8 @@ public sealed class ScanResult
     public double? PromptY { get; set; }
     public string? PromptPosition => PromptX is { } x && PromptY is { } y ? Loc.F("position", x, y) : null;
     public int SpectatingFramesSkipped { get; set; }
+    /// <summary>Frames where only the prompt area was OCR'd (the rest were read whole).</summary>
+    public int RegionFrames { get; set; }
     public List<PromptHit> Hits { get; set; } = [];
     public List<GameEvent> Events { get; set; } = [];
     /// <summary>All fights found, including those below threshold (kept for reviewing misses).</summary>

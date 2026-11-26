@@ -3,7 +3,8 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace ApexHighlighter.Core;
+namespace ApexHighlighter.Core;
+
 
 // =====================================================================================
 // ScanReport.cs — 把掃描結果存成報告
@@ -45,6 +46,7 @@ public static class ScanReport
         sb.AppendLine(Loc.F("rep.lang", r.Language, r.OcrLanguage, r.LanguageVerified ? "" : Loc.T("rep.unverified")));
         if (r.PromptPosition != null) sb.AppendLine(r.PromptPosition);
         if (r.SpectatingFramesSkipped > 0) sb.AppendLine(Loc.F("rep.spect", r.SpectatingFramesSkipped));
+        if (r.RegionFrames > 0) sb.AppendLine(Loc.F("rep.region", r.RegionFrames, r.FramesScanned));
         foreach (var n in r.Notes) sb.AppendLine(Loc.F("rep.note", n));
         sb.AppendLine();
         sb.AppendLine(Loc.F("rep.events", r.Events.Count));
