@@ -3,6 +3,15 @@ using System.Globalization;
 
 namespace ApexHighlighter.Core;
 
+// =====================================================================================
+// AudioActivity.cs — 用音量找「交戰從哪裡開始」
+//
+// 用 FFmpeg 把指定音軌每 0.5 秒算一次音量（dB），得到一條「音量曲線」。
+// EstimateFightStart：從第一個擊殺提示往回走，只要聲音一直「很吵」（中間沒有超過 3 秒的安靜）就繼續往前，
+//   停下來的地方就是交戰開始；結果限制在提示前 8~25 秒之間。
+// 沒有音軌或分析失敗時，Scanner 會改用固定往前推的秒數。
+// =====================================================================================
+
 /// <summary>Loudness envelope (dB per window) of one audio track. Used only to decide how far before the first knock a fight started.</summary>
 public sealed class AudioActivity
 {

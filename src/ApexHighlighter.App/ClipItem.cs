@@ -3,7 +3,15 @@ using System.Runtime.CompilerServices;
 using System.Windows.Media;
 using ApexHighlighter.Core;
 
-namespace ApexHighlighter.App;
+namespace ApexHighlighter.App;
+
+// =====================================================================================
+// ClipItem.cs — 片段清單裡的「一張卡片」
+//
+// 包一個 Candidate（自動找到的）或手動新增的片段，加上介面需要的東西：
+// 勾選、編號、縮圖、匯出狀態、顯示用的文字。
+// 實作 INotifyPropertyChanged：屬性一改，畫面上綁定它的地方就自動更新（WPF 資料繫結）。
+// =====================================================================================
 
 public enum ClipStatus { None, Exporting, Done, Problem }
 

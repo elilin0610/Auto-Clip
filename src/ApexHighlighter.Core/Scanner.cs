@@ -3,6 +3,23 @@ using System.Threading.Channels;
 
 namespace ApexHighlighter.Core;
 
+// =====================================================================================
+// Scanner.cs — 掃描主流程（整個專案最核心的檔案）
+//
+// 做的事：把一整場錄影「看一遍」，找出畫面上的擊殺提示，再組成最多 3 段精華。
+//
+// 流程（ScanAsync）：
+//   ① FrameReader 用 FFmpeg 每秒取 2 張畫面
+//   ② 多個 worker 同時把畫面丟給 Windows OCR，讀出畫面上所有文字
+//   ③ KeywordMatcher 比對文字：是不是「擊倒」「淘汰」「全隊淘汰」…
+//   ④ 一邊掃一邊判斷遊戲語言（哪個語言的關鍵字命中最多），確定後只用那個語言，速度變快
+//   ⑤ 去重複：同一個提示會在畫面停 2~3 秒，被讀到好幾次 → 合併成一個事件（Deduplicate）
+//   ⑥ 分群：相隔 25 秒內的事件算同一場交戰（Cluster），算分數，用音量找交戰開始時間
+//   ⑦ 分數夠高的前 3 名 → 候選片段
+//
+// 誰呼叫它：App 的 MainWindow（按「掃描精華」）和 CLI 的 scan 指令。
+// =====================================================================================
+
 /// <summary>
 /// Scans a recording for Apex on-screen prompts (knock / elimination / squad wipe / kill leader / champion)
 /// using Windows OCR on the whole frame, so neither HUD position nor game language is assumed.
@@ -13,7 +30,10 @@ public sealed class Scanner
 
     public Scanner(KeywordConfig cfg) => _cfg = cfg;
 
+    // Pair = 「一個 OCR 引擎」配「一個語言的關鍵字規則」。例如 en@en-US、zh-Hant@zh-Hant-TW。
+    // 還不知道遊戲語言時，每張畫面會用所有 Pair 都試一遍。
     private sealed record Pair(string Key, string OcrTag, KeywordMatcher Matcher, bool Native);
+    // 一張畫面用某個 Pair 讀到的結果：命中的提示、是不是在觀戰（觀戰時別人的擊殺不算）、HUD 固定文字數量。
     private sealed record FrameHits(double Time, string PairKey, List<PromptHit> Hits, bool Spectating, int Anchors);
 
     public async Task<ScanResult> ScanAsync(MediaInfo info, ScanOptions opt, IProgress<ScanProgress>? progress, CancellationToken ct)
@@ -21,10 +41,12 @@ public sealed class Scanner
         var sw = Stopwatch.StartNew();
         var result = new ScanResult { File = info.Path, Duration = info.Duration, Resolution = $"{info.Width}x{info.Height}" };
 
+        // 準備所有可能的語言組合（電腦有裝哪些 OCR 語言就用哪些）
         var pairs = BuildPairs(opt.Language, result.Notes);
         if (pairs.Count == 0)
             throw new InvalidOperationException(Loc.T("err.noOcr"));
 
+        // 音量分析在背景同時跑，最後用來估計交戰從哪裡開始（槍聲變大的地方）
         var audioTask = AudioActivity.AnalyzeAsync(info, opt.AudioTrack, ct);
 
         // Language lock: before lock every frame is OCR'd with every (engine, rules) pair; afterwards only the winner.
@@ -32,6 +54,8 @@ public sealed class Scanner
         var hitCount = pairs.ToDictionary(p => p.Key, _ => 0);
         var gate = new object();
 
+        // Channel 是一條「輸送帶」：一端放畫面（生產者），多個 worker 從另一端拿（消費者）。
+        // Bounded = 輸送帶有長度上限，worker 來不及處理時，讀畫面那端會等，不會把記憶體塞爆。
         var channel = Channel.CreateBounded<Frame>(new BoundedChannelOptions(opt.Workers * 2) { SingleWriter = true, FullMode = BoundedChannelFullMode.Wait });
         var collected = new List<FrameHits>();
         int framesDone = 0;
@@ -39,18 +63,23 @@ public sealed class Scanner
 
         var engineTags = pairs.Select(p => p.OcrTag).Distinct().ToList();
 
+        // ② 開好幾個 worker 同時做 OCR（OCR 最慢，平行處理才快）
         var workers = Enumerable.Range(0, opt.Workers).Select(_ => Task.Run(async () =>
         {
+            // 每個 worker 有自己的 OCR 引擎，避免互搶
             var readers = engineTags.ToDictionary(t => t, OcrReader.Create);
             await foreach (var f in channel.Reader.ReadAllAsync(ct))
             {
+                // lock：多個 worker 會同時讀寫 locked / collected，要排隊進去，不然資料會亂掉
                 Pair? lk;
                 lock (gate) lk = locked;
+                // 語言確定了就只跑那一組；還沒確定就全部試
                 var active = lk != null ? [lk] : pairs;
                 var linesByTag = new Dictionary<string, List<OcrTextLine>>();
                 foreach (var tag in active.Select(a => a.OcrTag).Distinct())
                     linesByTag[tag] = await readers[tag].ReadAsync(f.Bgra, f.Width, f.Height);
 
+                // ③ 每一行文字拿去比對關鍵字
                 var local = new List<FrameHits>();
                 foreach (var pair in active)
                 {
@@ -69,6 +98,7 @@ public sealed class Scanner
                 lock (gate)
                 {
                     collected.AddRange(local);
+                    // ④ 判斷遊戲語言：某個語言累積命中 ≥ 6 次，而且是第二名的 2 倍以上，就鎖定它
                     if (locked == null)
                     {
                         // Prompts and always-on HUD text (e.g. "SQUADS LEFT") both count as evidence for the language.
@@ -79,6 +109,7 @@ public sealed class Scanner
                     }
                     framesDone++;
                 }
+                // 每 10 張回報一次進度（介面上的進度條和黃色刻度就是靠這個）
                 if (framesDone % 10 == 0)
                 {
                     List<PromptHit>? snap = null;
@@ -99,6 +130,7 @@ public sealed class Scanner
             }
         }, ct)).ToArray();
 
+        // ① 生產者：FFmpeg 解出一張畫面就放上輸送帶
         try
         {
             await foreach (var frame in FrameReader.ReadAsync(info, opt.SampleFps, opt.OcrWidth, opt.HardwareDecode, ct))
@@ -106,9 +138,9 @@ public sealed class Scanner
         }
         finally
         {
-            channel.Writer.TryComplete();
+            channel.Writer.TryComplete();   // 告訴 worker：沒有新畫面了
         }
-        await Task.WhenAll(workers);
+        await Task.WhenAll(workers);        // 等所有 worker 做完
         result.FramesScanned = framesDone;
 
         // Final language choice (may still be null if the match had almost no prompts).
@@ -122,11 +154,13 @@ public sealed class Scanner
         if (!result.LanguageVerified)
             result.Notes.Add(Loc.F("note.langUnverified", winner.Matcher.LanguageId));
 
+        // 只留下勝出語言的結果，並丟掉觀戰中的畫面
         var mine = collected.Where(c => c.PairKey == winner.Key).OrderBy(c => c.Time).ToList();
         result.SpectatingFramesSkipped = mine.Count(m => m.Spectating);
         result.Hits = mine.Where(m => !m.Spectating).SelectMany(m => m.Hits).OrderBy(h => h.Time).ToList();
         if (MedianPosition(result.Hits) is { } pos) { result.PromptX = pos.X; result.PromptY = pos.Y; }
 
+        // ⑤ 同一個提示被讀到好幾次 → 合併成一個事件
         result.Events = Deduplicate(result.Hits, opt.SampleFps);
 
         progress?.Report(new ScanProgress { Fraction = 1, Message = Loc.T("progress.merging") });
@@ -135,12 +169,15 @@ public sealed class Scanner
         catch (OperationCanceledException) { throw; }
         catch (Exception ex) { result.Notes.Add(Loc.F("note.audioFailed", ex.Message)); }
 
+        // ⑥⑦ 分群成交戰、算分、挑前 3 名
         result.Clusters = Cluster(result.Events, audio, info.Duration, opt);
         result.Candidates = result.Clusters.Where(c => c.Accepted).ToList();
         result.ScanSeconds = sw.Elapsed.TotalSeconds;
         return result;
     }
 
+    // 列出要試的「語言 × OCR 引擎」組合。
+    // 如果某語言沒裝對應的 OCR（例如沒裝韓文），但它的關鍵字是英文字母，就借英文 OCR 來讀。
     private List<Pair> BuildPairs(string language, List<string> notes)
     {
         var installed = OcrReader.InstalledLanguages();
@@ -170,6 +207,8 @@ public sealed class Scanner
         return pairs;
     }
 
+    // 去重複：4 秒內、同種類、被擊殺者名字相似（相似度 ≥ 55%）→ 視為同一個提示。
+    // 例外：同一張畫面同時出現兩行「擊倒」而且名字明顯不同 → 是兩個人，分開算。
     /// <summary>Same kind + similar trailing text (victim name) within a few seconds = the same on-screen prompt.</summary>
     internal static List<GameEvent> Deduplicate(List<PromptHit> hits, double sampleFps)
     {
@@ -204,8 +243,14 @@ public sealed class Scanner
         return events.Select(e => new GameEvent(e.First, e.Last, e.Kind, e.Text.Trim(), e.N)).ToList();
     }
 
+    // 把事件分成一場一場的交戰，並決定每段片段的起訖時間。
+    //   分數 = 每個事件的權重相加（擊倒 1、淘汰 1.5、全隊淘汰 2.5…，在 keywords.json 設定）
+    //          只被讀到一次的事件可信度低，算半分
+    //   開始 = 從第一個提示往回找到聲音開始變吵的地方（限制在 8~25 秒前）；沒音軌就固定往前約 16 秒
+    //   結束 = 最後一個提示 + 6 秒（成為冠軍再多 8 秒）
     internal List<Candidate> Cluster(List<GameEvent> events, AudioActivity? audio, double duration, ScanOptions opt)
     {
+        // 依時間排好，跟上一個事件相隔 ≤ 25 秒就放同一群
         var groups = new List<List<GameEvent>>();
         foreach (var e in events.OrderBy(e => e.Time))
         {
@@ -227,6 +272,7 @@ public sealed class Scanner
             double post = opt.PostRoll + (g.Any(e => e.Kind == EventKind.Champion) ? 8 : 0);
             double end = Math.Min(duration, last + post);
 
+            // 不合格的情況：分數太低（但拿冠軍一定留）、只有助攻
             bool champion = g.Any(e => e.Kind == EventKind.Champion && e.Samples >= 2);
             var reject = RejectKind.None;
             if (score < opt.MinScore && !champion) reject = RejectKind.LowScore;
@@ -259,6 +305,8 @@ public sealed class Scanner
         return (xs[xs.Count / 2], ys[ys.Count / 2]);
     }
 }
+
+// 時間格式小工具：秒數 ↔ "01:23"、"0:01:23.4"。全專案共用。
 public static class TimeFmt
 {
     public static string Hms(double s)

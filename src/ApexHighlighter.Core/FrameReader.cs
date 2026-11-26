@@ -3,6 +3,15 @@ using System.Globalization;
 
 namespace ApexHighlighter.Core;
 
+// =====================================================================================
+// FrameReader.cs — 從影片一張一張取出畫面
+//
+// 叫 FFmpeg 用固定 fps（預設每秒 2 張）解碼、縮到 OCR 寬度（預設 1280），
+// 輸出原始像素（BGRA，每個像素 4 bytes），用 IAsyncEnumerable 一張一張交給 Scanner。
+// 預設讓 FFmpeg 自動挑可用的硬體解碼（-hwaccel auto），比較快；不能用時它會退回 CPU。
+// 不寫暫存檔，也不會動到原始錄影。
+// =====================================================================================
+
 public sealed record Frame(int Index, double Time, byte[] Bgra, int Width, int Height);
 
 /// <summary>Streams downscaled BGRA frames out of ffmpeg at a fixed sample rate (no temp files, source untouched).</summary>

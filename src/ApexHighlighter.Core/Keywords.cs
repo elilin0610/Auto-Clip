@@ -3,7 +3,18 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace ApexHighlighter.Core;
+namespace ApexHighlighter.Core;
+
+// =====================================================================================
+// Keywords.cs — 判斷一行 OCR 文字是不是擊殺提示
+//
+// KeywordConfig：讀 keywords.json（每種語言的關鍵字、每種事件的分數權重）。
+// KeywordMatcher：
+//   Match         這行字是哪一種事件？（擊倒 / 淘汰 / 全隊淘汰 / 擊殺王 / 冠軍 / 助攻）
+//   IsSpectating  是不是在觀戰（觀戰時的提示是別人的，不算）
+//   IsAnchor      是不是 HUD 固定會出現的字（例如 SQUADS LEFT），用來幫忙判斷遊戲語言
+//   Similarity    兩個字串有多像（0~1），OCR 常會讀錯一兩個字，所以用模糊比對
+// =====================================================================================
 
 public enum EventKind { Knock, Elimination, SquadWipe, KillLeader, Champion, Assist }
 

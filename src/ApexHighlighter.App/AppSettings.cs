@@ -6,6 +6,14 @@ using ApexHighlighter.Core;
 
 namespace ApexHighlighter.App;
 
+// =====================================================================================
+// AppSettings.cs — 使用者設定的讀寫
+//
+// 存在 %LOCALAPPDATA%\ApexHighlighter\settings.json：
+// 介面語言、輸出資料夾、匯出格式、視窗位置大小、OBS 連線設定。
+// OBS 密碼用 Windows DPAPI 加密後才存，只有同一個 Windows 帳戶能解開，檔案裡沒有明碼。
+// =====================================================================================
+
 /// <summary>Per-user settings, stored in %LOCALAPPDATA%\ApexHighlighter\settings.json.</summary>
 public sealed class AppSettings
 {

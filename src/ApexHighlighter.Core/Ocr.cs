@@ -3,7 +3,14 @@ using Windows.Globalization;
 using Windows.Graphics.Imaging;
 using Windows.Media.Ocr;
 
-namespace ApexHighlighter.Core;
+namespace ApexHighlighter.Core;
+
+// =====================================================================================
+// Ocr.cs — 呼叫 Windows 內建的文字辨識（Windows.Media.Ocr）
+//
+// 不用另外安裝或付費，Windows 有裝哪些語言包就能辨識哪些語言。
+// ReadAsync：給一張 BGRA 畫面，回傳每一行文字和它在畫面上的位置（0~1 的比例座標）。
+// =====================================================================================
 
 public sealed record OcrTextLine(string Text, double X, double Y, double W, double H);
 

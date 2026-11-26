@@ -1,4 +1,15 @@
-namespace ApexHighlighter.Core;
+namespace ApexHighlighter.Core;
+
+// =====================================================================================
+// Models.cs — 各處共用的資料型別（只裝資料，幾乎沒有邏輯）
+//
+//   PromptHit    OCR 在某一張畫面讀到的一行提示（還沒去重複）
+//   GameEvent    去重複後的一個提示事件（例如 00:19 擊倒）
+//   Candidate    一場交戰 = 一個候選片段（起訖時間、分數、包含哪些事件、沒選上的原因）
+//   ScanOptions  掃描參數（fps、幾個 worker、分群間隔、最多幾段…）
+//   ScanProgress 掃描進度（回報給介面用）
+//   ScanResult   掃描的完整結果
+// =====================================================================================
 
 /// <summary>One OCR line that matched a rule in one sampled frame.</summary>
 public sealed record PromptHit(double Time, EventKind Kind, string Text, string Rest, double X, double Y, double W, double H);

@@ -6,6 +6,21 @@ using System.Text.Json.Nodes;
 
 namespace ApexHighlighter.Core;
 
+// =====================================================================================
+// ObsWatcher.cs — 連上 OBS，等「錄影停止」的通知
+//
+// 怎麼運作：
+//   OBS 內建 WebSocket 伺服器（預設 ws://localhost:4455）。連上後：
+//     OBS → 我們  Hello（op 0）：附上 salt 和 challenge 兩個亂數
+//     我們 → OBS  Identify（op 1）：用密碼 + 亂數算出驗證碼（AuthString），並說要訂閱「輸出」類事件
+//     OBS → 我們  Identified（op 2）：驗證通過
+//   之後線路一直開著，OBS 有事件就推過來（op 5）。收到 RecordStateChanged = 停止，就觸發 RecordingStopped。
+//
+// 密碼本身從不在網路上傳送，傳的是雜湊過的驗證碼。
+// 這個類別只「聽」，不會送任何會改變 OBS 的指令。
+// 斷線會每 10 秒自動重連（OBS 可能比本程式晚開）；密碼錯就停下不再試。
+// =====================================================================================
+
 public enum ObsState { Off, Connecting, Connected, Disconnected, AuthFailed }
 
 /// <summary>
@@ -39,6 +54,7 @@ public sealed class ObsWatcher : IAsyncDisposable
     /// <summary>Connects in the background and keeps reconnecting every 10 s (OBS may start after this app). Stops for good on a wrong password.</summary>
     public void Start() => _loop ??= Task.Run(RunAsync);
 
+    // 背景迴圈：連線 → 一直收訊息 → 斷了就等 10 秒再連
     private async Task RunAsync()
     {
         var ct = _cts.Token;
@@ -106,6 +122,7 @@ public sealed class ObsWatcher : IAsyncDisposable
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new TimeoutException($"ws://{host}:{port} did not answer."); }
             }
 
+            // 握手：Hello → Identify → Identified
             var hello = await ReceiveAsync(ws, ct) ?? throw new InvalidOperationException("OBS closed the connection.");
             var d = hello["d"]!;
             var identify = new JsonObject { ["rpcVersion"] = 1, ["eventSubscriptions"] = events };
@@ -155,6 +172,7 @@ public sealed class ObsWatcher : IAsyncDisposable
         await ws.SendAsync(Encoding.UTF8.GetBytes(msg.ToJsonString()), WebSocketMessageType.Text, true, ct);
 
     /// <summary>One whole text message, or null when the server closes the connection.</summary>
+    // 一則訊息可能分好幾塊送來，收到 EndOfMessage 才算完整。上限 4 MB 防止異常大的訊息吃光記憶體。
     private static async Task<JsonNode?> ReceiveAsync(ClientWebSocket ws, CancellationToken ct)
     {
         var buf = new byte[16 * 1024];

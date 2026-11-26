@@ -2,6 +2,13 @@ using System.Diagnostics;
 
 namespace ApexHighlighter.Core;
 
+// =====================================================================================
+// FFmpegLocator.cs — 找到 ffmpeg.exe / ffprobe.exe 並執行它們
+//
+// 依序找：環境變數 APEXHL_FFMPEG_DIR → 程式旁邊（或旁邊的 ffmpeg 資料夾）→ PATH → winget 安裝位置。
+// RunAsync：執行一次、等它結束、回傳輸出；失敗會丟出例外並附上錯誤訊息最後一段（Tail）。
+// =====================================================================================
+
 /// <summary>Finds ffmpeg.exe / ffprobe.exe. Order: APEXHL_FFMPEG_DIR env var, "ffmpeg" folder next to the app, PATH, winget install.</summary>
 public static class FFmpegLocator
 {

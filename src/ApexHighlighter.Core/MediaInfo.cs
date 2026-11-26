@@ -3,6 +3,14 @@ using System.Text.Json;
 
 namespace ApexHighlighter.Core;
 
+// =====================================================================================
+// MediaInfo.cs — 讀影片的基本資訊
+//
+// 用 ffprobe 讀：長度、解析度、fps、影像編碼、有幾條音軌和各自的名稱。
+// WithTrackVolumesAsync：再量每條音軌的平均音量。
+// DefaultAudioTrack：預設用第 1 條；如果第 1 條幾乎沒聲音（低於 -60 dB），改用最大聲的那條。
+// =====================================================================================
+
 public sealed record AudioTrack(int Index, int Channels, string? Language, string? Title, double? MeanVolumeDb = null)
 {
     public override string ToString()

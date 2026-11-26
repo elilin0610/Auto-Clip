@@ -14,6 +14,21 @@ using Microsoft.Win32;
 
 namespace ApexHighlighter.App;
 
+// =====================================================================================
+// MainWindow.xaml.cs — 主視窗的所有行為（畫面長相在 MainWindow.xaml）
+//
+// 區塊（搜尋「// ─────────────」可以一段一段跳）：
+//   建構與設定        讀設定、還原視窗位置、填下拉選單、啟動 OBS 監聽
+//   匯入              按鈕 / 拖放檔案 → MediaInfo 讀資訊 → 載入播放器
+//   掃描              RunScanAsync：呼叫 Scanner，掃描中即時畫黃色刻度，掃完載入縮圖
+//   片段清單          勾選、選取、微調起訖（±1 秒、設為目前位置）、手動新增
+//   播放器與時間軸    播放 / 暫停 / 跳轉、DrawMarkers 畫片段色塊和刻度、拖曳把手改起訖
+//   匯出              依勾選的片段逐一呼叫 Exporter，再 VerifyAsync 檢查
+//   OBS               錄影停止 → 自動匯入並掃描；正在忙就排隊等
+//
+// WPF 小提醒：只有 UI 執行緒能改畫面，背景工作要用 Dispatcher 切回來。
+// =====================================================================================
+
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<ClipItem> _clips = [];
@@ -92,7 +107,7 @@ public partial class MainWindow : Window
         try { return OcrReader.InstalledLanguages(); } catch { return [Loc.T("log.ocrUnknown")]; }
     }
 
-    // ───────────── Language ─────────────
+    // ───────────── 語言：OCR 可用語言、開設定視窗 ─────────────
 
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
@@ -102,7 +117,7 @@ public partial class MainWindow : Window
         if (before != (s.ObsEnabled, s.ObsHost, s.ObsPort, s.ObsPasswordProtected)) RestartObs();
     }
 
-    // ───────────── Remembered settings ─────────────
+    // ───────────── 記住的設定：視窗位置、輸出資料夾 ─────────────
 
     private void RestorePlacement()
     {
@@ -134,7 +149,7 @@ public partial class MainWindow : Window
         App.Settings.Save();
     }
 
-    // ───────────── Export format ─────────────
+    // ───────────── 匯出格式（橫式 / 直式裁中間 / 直式完整畫面） ─────────────
 
     private ExportFormat SelectedFormat => FormatBox.SelectedIndex >= 0 ? (ExportFormat)FormatBox.SelectedIndex : ExportFormat.Landscape;
 
@@ -156,7 +171,7 @@ public partial class MainWindow : Window
         if (_info != null) ExportInfo.Text = DescribeOutput(_info);
     }
 
-    // ───────────── OBS ─────────────
+    // ───────────── OBS：連線、狀態顯示、錄影停止後自動匯入並掃描 ─────────────
 
     /// <summary>(Re)connects to OBS with the current settings, or stops listening if it's turned off.</summary>
     private void RestartObs()
@@ -217,6 +232,8 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(async () => await OnObsRecordingStoppedAsync(p));
     }
 
+    // ───────────── 介面語言切換與顯示文字 ─────────────
+
     private void OnLanguageChanged()
     {
         ApplyLanguage();
@@ -273,7 +290,7 @@ public partial class MainWindow : Window
         ListHint.Text = Loc.F(key, args);
     }
 
-    // ───────────── Import ─────────────
+    // ───────────── 匯入錄影（按鈕或拖放） ─────────────
 
     private async void Import_Click(object sender, RoutedEventArgs e)
     {
@@ -330,7 +347,7 @@ public partial class MainWindow : Window
         }
     }
 
-    // ───────────── Scan ─────────────
+    // ───────────── 掃描：呼叫 Scanner，掃描中即時畫黃色刻度 ─────────────
 
     private async void Scan_Click(object sender, RoutedEventArgs e) => await RunScanAsync();
 
@@ -399,7 +416,7 @@ public partial class MainWindow : Window
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => _cts?.Cancel();
 
-    // ───────────── Export ─────────────
+    // ───────────── 匯出：把勾選的片段逐一剪出並檢查 ─────────────
 
     private async void Export_Click(object sender, RoutedEventArgs e)
     {
@@ -489,7 +506,7 @@ public partial class MainWindow : Window
         Process.Start(new ProcessStartInfo("explorer.exe", d) { UseShellExecute = true });
     }
 
-    // ───────────── Clip list & editor ─────────────
+    // ───────────── 片段清單：新增、刪除、選取、微調起訖時間 ─────────────
 
     private ClipItem? Selected => ClipList.SelectedItem as ClipItem;
 
@@ -593,6 +610,8 @@ public partial class MainWindow : Window
 
     private static readonly SolidColorBrush TickBrush = Frozen(Color.FromRgb(0xFF, 0xD1, 0x66));
     private static readonly SolidColorBrush HandleBrush = Frozen(Color.FromRgb(0xF2, 0xF3, 0xF5));
+    // ───────────── 時間軸：畫片段色塊 / 黃色刻度 / 拖曳把手 ─────────────
+
     private static SolidColorBrush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
 
     /// <summary>Clip ranges, prompt ticks, and drag handles for the selected clip's start and end.</summary>
@@ -691,6 +710,8 @@ public partial class MainWindow : Window
         DrawMarkers();
     }
 
+    // ───────────── 縮圖 ─────────────
+
     /// <summary>Fills in preview pictures for clips that don't have one yet.</summary>
     private async Task LoadThumbnailsAsync()
     {
@@ -711,7 +732,7 @@ public partial class MainWindow : Window
         }
     }
 
-    // ───────────── Player ─────────────
+    // ───────────── 播放器：播放、暫停、跳轉、進度條、快捷鍵 ─────────────
 
     private void Player_MediaOpened(object sender, RoutedEventArgs e)
     {
@@ -813,7 +834,7 @@ public partial class MainWindow : Window
         }
     }
 
-    // ───────────── Helpers ─────────────
+    // ───────────── 小工具：忙碌狀態、按鈕啟用、記錄 ─────────────
 
     private void SetBusy(bool busy, string status)
     {

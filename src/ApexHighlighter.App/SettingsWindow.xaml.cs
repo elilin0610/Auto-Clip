@@ -5,6 +5,13 @@ using ApexHighlighter.Core;
 
 namespace ApexHighlighter.App;
 
+// =====================================================================================
+// SettingsWindow.xaml.cs — 設定視窗
+//
+// 介面語言（選了立刻生效）、OBS 開關 / 位址 / 連接埠 / 密碼、「測試連線」按鈕。
+// 關閉視窗時存檔；密碼有改才重新加密。
+// =====================================================================================
+
 public partial class SettingsWindow : Window
 {
     public SettingsWindow()

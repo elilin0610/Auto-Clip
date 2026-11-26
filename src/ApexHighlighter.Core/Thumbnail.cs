@@ -3,6 +3,13 @@ using System.Globalization;
 
 namespace ApexHighlighter.Core;
 
+// =====================================================================================
+// Thumbnail.cs — 取一張縮圖
+//
+// 叫 FFmpeg 在指定秒數取一張畫面，縮小後輸出成 JPEG。
+// 直接從 stdout 讀回位元組，不寫暫存檔。片段清單左邊的小圖就是這個。
+// =====================================================================================
+
 /// <summary>Small preview pictures for the clip list. Read straight from FFmpeg's output; nothing is written to disk.</summary>
 public static class Thumbnail
 {

@@ -2,6 +2,16 @@ using System.Globalization;
 
 namespace ApexHighlighter.Core;
 
+// =====================================================================================
+// Loc.cs — 介面文字的翻譯表（英文 / 繁中 / 日文）
+//
+// 每個 key 對應三種語言，例如 "btn.scan" → ["Find highlights", "掃描精華", "ハイライトを探す"]。
+//   Loc.T(key)        取目前語言的文字
+//   Loc.F(key, 參數)  取文字並填入 {0}{1}…
+//   Loc.Set(code)     切換語言，並觸發 Changed 事件讓畫面更新
+// 只管「本程式的介面文字」；遊戲語言是掃描時自動偵測的，跟這裡無關。
+// =====================================================================================
+
 /// <summary>
 /// Interface strings in English, Traditional Chinese and Japanese. One table shared by the WPF app, the CLI and
 /// the texts the core produces (fight reasons, skip reasons, export checks, scan reports).

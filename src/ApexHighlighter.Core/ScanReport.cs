@@ -3,7 +3,15 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace ApexHighlighter.Core;
+namespace ApexHighlighter.Core;
+
+// =====================================================================================
+// ScanReport.cs — 把掃描結果存成報告
+//
+// 存兩份到 %LOCALAPPDATA%\ApexHighlighter\scans：
+//   .txt  給人看：每一個 OCR 命中、事件、分群、沒選上的原因（方便檢查誤判或漏抓）
+//   .json 給程式讀：完整的 ScanResult
+// =====================================================================================
 
 /// <summary>Writes the scan log (JSON + readable text) so misdetections can be reviewed later.</summary>
 public static class ScanReport

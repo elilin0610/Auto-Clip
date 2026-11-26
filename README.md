@@ -32,6 +32,8 @@ dotnet run --project src\ApexHighlighter.Cli -c Release -- thumb "錄影.mkv" 75
 dotnet run --project src\ApexHighlighter.Cli -c Release -- obswatch --port 4455
 ```
 
+組建後的執行檔叫 `apexhl.exe`（在 `src\ApexHighlighter.Cli\bin\<Debug或Release>\net11.0-windows10.0.19041.0\`），也可以直接執行它，例如 `apexhl scan "錄影.mkv"`。不加參數執行會顯示所有指令。`錄影.mkv` 只是範例檔名，請換成你自己的錄影路徑。
+
 `obswatch` 的 OBS 密碼請放在環境變數 `APEXHL_OBS_PASSWORD`，不要打在指令裡（會留在命令歷史）。
 
 ## 介面
