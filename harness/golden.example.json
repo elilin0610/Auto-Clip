@@ -12,7 +12,7 @@
     {
       "id": "B-squad-wipe",
       "_why": "61 s SteelSeries kill clip: 2 knocks, 3 eliminations, squad wipe. 61 秒擊殺片段：2 擊倒、3 淘汰、滅隊。",
-      "file": "%APEXHL_SAMPLES%\\Apex-Legends__2026-11-24__04-39-59.mp4",
+      "file": "%USERPROFILE%\\Videos\\SteelSeries Moments\\Apex-Legends__2026-11-24__04-39-59.mp4",
       "args": [],
       "expect": { "minCandidates": 1, "maxCandidates": 1, "language": "en", "mustCover": [19, 22.5], "maxClipSeconds": 120, "maxScanSeconds": 20 },
       "export": true
