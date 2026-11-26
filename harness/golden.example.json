@@ -1,0 +1,21 @@
+{
+  "_note": "Copy to harness/golden.local.json (git-ignored) and point 'file' at real recordings on this PC. %VARS% are expanded. 複製成 harness/golden.local.json（不進 git），把 file 改成這台電腦上的實際錄影路徑，可用 %環境變數%。Expectations come from acceptance/驗收紀錄.md (2026-11-25). 期望值來自 acceptance/驗收紀錄.md。",
+  "cases": [
+    {
+      "id": "A-no-kills",
+      "_why": "Full ranked match with zero own knocks/eliminations; earlier rules produced a false positive here. 整場排位，自己沒有擊倒或淘汰，第一版規則曾誤判。",
+      "file": "%APEXHL_SAMPLES%\\Apex Legends_11-14-2026_12-2-3-900.mp4",
+      "args": [],
+      "expect": { "minCandidates": 0, "maxCandidates": 0, "maxScanSeconds": 120 },
+      "export": false
+    },
+    {
+      "id": "B-squad-wipe",
+      "_why": "61 s SteelSeries kill clip: 2 knocks, 3 eliminations, squad wipe. 61 秒擊殺片段：2 擊倒、3 淘汰、滅隊。",
+      "file": "%APEXHL_SAMPLES%\\Apex-Legends__2026-11-24__04-39-59.mp4",
+      "args": [],
+      "expect": { "minCandidates": 1, "maxCandidates": 1, "language": "en", "mustCover": [19, 22.5], "maxClipSeconds": 120, "maxScanSeconds": 20 },
+      "export": true
+    }
+  ]
+}

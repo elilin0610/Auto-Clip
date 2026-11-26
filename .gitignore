@@ -14,3 +14,9 @@ obj/
 *.mkv
 *.mov
 *.flv
+
+# 驗證流程的輸出與本機設定 / verify harness output and local config
+harness/out/
+harness/out-gate.log
+harness/.loop-state.json
+harness/golden.local.json
