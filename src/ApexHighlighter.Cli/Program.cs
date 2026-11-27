@@ -313,10 +313,9 @@ async Task<int> ObsWatch()
         AnsiConsole.MarkupLine("[red]✘ OBS 密碼錯誤[/]，請把密碼放進環境變數 APEXHL_OBS_PASSWORD");
         return 2;
     }
-    catch (Exception ex) when (ex is not OperationCanceledException)
+    catch (Exception ex) when (!cts.IsCancellationRequested)
     {
-        AnsiConsole.MarkupLine($"[red]✘ 連不到 OBS[/]：{Markup.Escape(ex.Message)}");
-        AnsiConsole.MarkupLine("[grey]  OBS 要開著，並在「工具 → WebSocket 伺服器設定」啟用伺服器[/]");
+        AnsiConsole.MarkupLine($"[red]✘[/] {Markup.Escape(ObsWatcher.FriendlyError(ex, host, port))}");
         return 2;
     }
     AnsiConsole.MarkupLine($"[green]✔[/] 已連線 OBS {Markup.Escape(version)}，等待錄影停止…  [grey](Ctrl+C 結束)[/]");

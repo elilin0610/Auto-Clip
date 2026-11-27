@@ -271,6 +271,8 @@ public static class Loc
             "以 {0} 為中心，前後各 15 秒，請再微調",
             "{0} を中心に前後 15 秒。必要に応じて微調整してください"],
         ["clip.detail"] = ["Score {0:0.0} | {1} | {2}", "分數 {0:0.0}｜{1}｜{2}", "スコア {0:0.0}｜{1}｜{2}"],
+        ["clip.noEventsInRange"] = ["No prompts inside this range", "這個範圍內沒有觸發提示", "この範囲内にはプロンプトがありません"],
+        ["clip.outsideRange"] = ["{0} outside the clip", "另有 {0} 個在範圍外", "範囲外に {0} 件"],
         ["clip.auto"] = ["Auto-detected", "自動偵測", "自動検出"],
         ["clip.manualSrc"] = ["Manual", "手動", "手動"],
         ["clip.length"] = ["{0:0} s", "{0:0} 秒", "{0:0} 秒"],
@@ -364,7 +366,22 @@ public static class Loc
         ["obs.testing"] = ["Connecting…", "連線中…", "接続中…"],
         ["obs.ok"] = ["Connected to OBS {0}", "已連上 OBS {0}", "OBS {0} に接続しました"],
         ["obs.fail"] = ["Could not connect: {0}", "連不上：{0}", "接続できません：{0}"],
-        ["obs.authFail"] = ["Wrong password", "密碼錯誤", "パスワードが違います"],
+        ["obs.authFail"] = [
+            "Wrong password. Copy it again from OBS → Tools → WebSocket Server Settings → Show Connect Info.",
+            "密碼錯誤。請到 OBS 的 Tools → WebSocket Server Settings → Show Connect Info 重新複製密碼。",
+            "パスワードが違います。OBS の Tools → WebSocket Server Settings → Show Connect Info からコピーし直してください。"],
+        ["obs.notReachable"] = [
+            "Can't reach OBS at {0}:{1}. Open OBS first, then check Tools → WebSocket Server Settings → Enable WebSocket server (and that the port matches).",
+            "連不上 {0}:{1} 的 OBS。請先開啟 OBS，並確認 Tools → WebSocket Server Settings 裡已勾選 Enable WebSocket server（連接埠也要一致）。",
+            "{0}:{1} の OBS に接続できません。先に OBS を起動し、Tools → WebSocket Server Settings で Enable WebSocket server がオンか（ポートが一致しているか）確認してください。"],
+        ["obs.notObs"] = [
+            "Something answered on {0}:{1}, but it isn't the OBS WebSocket server. Check the port in OBS → Tools → WebSocket Server Settings.",
+            "{0}:{1} 有程式回應，但不是 OBS 的 WebSocket 伺服器。請到 OBS 的 Tools → WebSocket Server Settings 確認連接埠。",
+            "{0}:{1} で応答がありましたが、OBS の WebSocket サーバーではありません。OBS の Tools → WebSocket Server Settings でポートを確認してください。"],
+        ["obs.needPassword"] = [
+            "OBS asks for a password. Copy it from OBS → Tools → WebSocket Server Settings → Show Connect Info.",
+            "OBS 需要密碼。請到 OBS 的 Tools → WebSocket Server Settings → Show Connect Info 複製密碼貼上。",
+            "OBS がパスワードを求めています。OBS の Tools → WebSocket Server Settings → Show Connect Info からコピーしてください。"],
         ["obs.state.Connecting"] = ["OBS: connecting…", "OBS：連線中…", "OBS：接続中…"],
         ["obs.state.Connected"] = ["OBS: connected", "OBS：已連線", "OBS：接続済み"],
         ["obs.state.Disconnected"] = ["OBS: not connected (retrying)", "OBS：未連線（自動重試）", "OBS：未接続（再試行中）"],

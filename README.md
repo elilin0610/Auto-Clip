@@ -22,6 +22,15 @@ If Windows shows "Application Control policy has blocked this file", that is Sma
 - turn it off under Windows Security > App & browser control > Smart App Control, or
 - use the CLI for now.
 
+To find the app in Windows Search (Start menu), build the Release version once and create a shortcut:
+
+```powershell
+dotnet build src\ApexHighlighter.App -c Release
+powershell -NoProfile -File scripts\install-shortcut.ps1
+```
+
+This adds "Apex Highlight Picker" to your Start menu (current user only, no admin needed). Run it again after the build location changes; add `-UseDotnet` if Smart App Control blocks the exe, or `-Remove` to delete it. If PowerShell says running scripts is disabled, allow local scripts once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+
 CLI (same core as the UI):
 
 ```powershell
