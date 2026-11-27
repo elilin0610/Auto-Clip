@@ -17,16 +17,23 @@ After your stream ends, drop in your Apex recording and the app finds up to 3 fi
 dotnet run --project src\ApexHighlighter.App -c Release
 ```
 
-If Windows shows "Application Control policy has blocked this file", that is Smart App Control (SAC) blocking a new unsigned program. **Keep SAC on.** Turning it off removes that protection for every program on the PC, and on many Windows versions it can only be turned back on by resetting Windows. Instead:
+If Windows shows "Application Control policy has blocked this file", that is Smart App Control (SAC) blocking an unsigned program. **Keep SAC on if you can.** Turning it off removes that protection for every program on the PC, and on many Windows versions it can only be turned back on by resetting Windows.
 
-- Start the app through `dotnet`, which is signed by Microsoft, instead of the unsigned `ApexHighlighter.App.exe`:
-  ```powershell
-  dotnet build src\ApexHighlighter.App -c Release
-  dotnet src\ApexHighlighter.App\bin\Release\net11.0-windows10.0.19041.0\ApexHighlighter.App.dll
-  ```
-  The CLI and the harness already run this way (`dotnet apexhl.dll`) with SAC on.
-- Or use the CLI below.
-- For builds other people download, sign the release. See [docs/SIGNING.md](docs/SIGNING.md). Signed releases also come with a `SHA256SUMS.txt` file so people can check the download.
+Tested on 2026-11-27 with SAC on (`VerifiedAndReputablePolicyState = 1`):
+
+| How it is started | Result |
+|---|---|
+| `ApexHighlighter.App.exe` | Blocked |
+| `dotnet ApexHighlighter.App.dll` | Also blocked: SAC checks the DLL that `dotnet.exe` loads (CodeIntegrity events 3033/3077/3118) |
+| CLI, `dotnet apexhl.dll` (also what `harness\verify.ps1` uses) | Works: scan and export passed |
+
+So with SAC on:
+
+- Use the CLI below for scanning and exporting; it works today.
+- To use the window, the app has to be signed with a certificate from a trusted CA. See [docs/SIGNING.md](docs/SIGNING.md) (an OV certificate is the option available in Taiwan). A self-signed certificate does not satisfy SAC.
+- Turning SAC off (Settings > Privacy & security > Windows Security > App & browser control > Smart App Control settings) also works, but think of it as permanent.
+
+Releases come with a `SHA256SUMS.txt` file so people can check the download.
 
 Security notes: [docs/SECURITY.md](docs/SECURITY.md).
 

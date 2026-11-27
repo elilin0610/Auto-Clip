@@ -17,16 +17,23 @@
 dotnet run --project src\ApexHighlighter.App -c Release
 ```
 
-如果 Windows 跳出「Application Control policy has blocked this file」，那是 Smart App Control（SAC）在擋未簽章的新程式。**請不要關掉 SAC。**關掉後整台電腦的所有程式都失去這層保護，而且在不少 Windows 版本上要重設 Windows 才能再打開。改用下面的方法：
+如果 Windows 跳出「Application Control policy has blocked this file」，那是 Smart App Control（SAC）在擋未簽章的程式。**能不關就不要關 SAC。**關掉後整台電腦的所有程式都失去這層保護，而且在不少 Windows 版本上要重設 Windows 才能再打開。
 
-- 透過微軟簽過章的 `dotnet` 啟動，不要直接執行沒簽章的 `ApexHighlighter.App.exe`：
-  ```powershell
-  dotnet build src\ApexHighlighter.App -c Release
-  dotnet src\ApexHighlighter.App\bin\Release\net11.0-windows10.0.19041.0\ApexHighlighter.App.dll
-  ```
-  CLI 和 harness 已經是這樣跑（`dotnet apexhl.dll`），SAC 開著也能用。
-- 或先用下面的 CLI。
-- 要給別人下載的版本，請替發佈檔簽章，見 [docs/SIGNING.zh-TW.md](docs/SIGNING.zh-TW.md)。發佈時會附上 `SHA256SUMS.txt`，讓下載的人可以核對檔案。
+2026-11-27 在 SAC 開著（`VerifiedAndReputablePolicyState = 1`）的電腦上實測：
+
+| 啟動方式 | 結果 |
+|---|---|
+| `ApexHighlighter.App.exe` | 被擋 |
+| `dotnet ApexHighlighter.App.dll` | 一樣被擋：SAC 會檢查 `dotnet.exe` 載入的 DLL（CodeIntegrity 事件 3033／3077／3118） |
+| CLI，`dotnet apexhl.dll`（`harness\verify.ps1` 也是這樣跑） | 可以用：掃描和匯出都通過 |
+
+所以 SAC 開著時：
+
+- 掃描和匯出先用下面的 CLI，現在就能用。
+- 要用視窗介面，程式必須用受信任 CA 的憑證簽章，見 [docs/SIGNING.zh-TW.md](docs/SIGNING.zh-TW.md)（台灣可用的是 OV 憑證）。自簽憑證過不了 SAC。
+- 關掉 SAC（Settings > Privacy & security > Windows Security > App & browser control > Smart App Control settings）也能用，但請當成關了就回不去。
+
+發佈時會附上 `SHA256SUMS.txt`，讓下載的人可以核對檔案。
 
 資安說明：[docs/SECURITY.zh-TW.md](docs/SECURITY.zh-TW.md)。
 

@@ -2,7 +2,7 @@
 
 [English](SIGNING.md)
 
-有了簽章，別人（以及 Smart App Control）才能在不關閉 SAC 的情況下信任下載來的 `ApexHighlighter.App.exe`。**自己電腦上用不需要簽章**：用 `dotnet ...\ApexHighlighter.App.dll` 啟動就好（見 README），因為 `dotnet.exe` 已經有微軟的簽章。
+要在 Smart App Control 開著的情況下使用視窗版（`ApexHighlighter.App`），不論是自己的電腦還是別人的電腦，簽章都是唯一的方法。2026-11-27 實測：SAC 開著時，`ApexHighlighter.App.exe` 和 `dotnet ApexHighlighter.App.dll` 都會被擋，因為 SAC 也會檢查 `dotnet.exe` 載入的 DLL。CLI（`dotnet apexhl.dll`）可以執行，所以在簽章之前，掃描和匯出可以先用 CLI。
 
 申請憑證需要你本人的身分文件和付款，只能由你操作。之後的步驟這個 repo 都已經準備好了。
 

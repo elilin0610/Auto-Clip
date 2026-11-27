@@ -2,7 +2,7 @@
 
 [繁體中文](SIGNING.zh-TW.md)
 
-Signing is what lets people (and Smart App Control) trust a downloaded `ApexHighlighter.App.exe` without turning SAC off. **You do not need it for your own PC**: start the app with `dotnet ...\ApexHighlighter.App.dll` (see the README), because `dotnet.exe` is already signed by Microsoft.
+Signing is the only way to run the window app (`ApexHighlighter.App`) with Smart App Control on, on your own PC as well as on other people's. Tested 2026-11-27: with SAC on, both `ApexHighlighter.App.exe` and `dotnet ApexHighlighter.App.dll` are blocked, because SAC also checks DLLs loaded by `dotnet.exe`. The CLI (`dotnet apexhl.dll`) does run, so it covers scanning and exporting until the app is signed.
 
 Getting a certificate needs your own identity documents and payment, so only you can do it. Everything after that is ready in this repo.
 
