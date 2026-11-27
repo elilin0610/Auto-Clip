@@ -11,6 +11,7 @@ namespace ApexHighlighter.Core;
 //   ① VideoFilter 決定畫面怎麼處理（橫式補黑邊 / 直式裁中間 / 直式完整畫面加模糊背景）
 //   ② RunEncodeAsync 組好 FFmpeg 參數去剪，先試 NVIDIA 顯卡編碼（快），失敗就改用 CPU（libx264）
 //   ③ 先寫到 xxx.part.mp4，成功才改名，避免留下剪一半的壞檔
+//   聲音：預設只輸出介面上選的那條；可選「混合所有音軌」（遊戲聲 + 麥克風）和「音量標準化」（YouTube 的 -14 LUFS）
 //   ④ VerifyAsync 檢查成品：能完整解碼、比例正確、影音起點和長度對得上
 //
 // 安全原則：原始錄影只讀不寫，輸出路徑跟原檔一樣會直接拒絕。
@@ -26,6 +27,10 @@ public sealed class ExportOptions
     /// <summary>"auto" tries NVENC (GPU) first and falls back to libx264.</summary>
     public string Encoder { get; set; } = "auto";
     public int Quality { get; set; } = 19;
+    /// <summary>Mix every audio track into one (e.g. game + microphone recorded on separate OBS tracks) instead of using only <see cref="AudioTrack"/>.</summary>
+    public bool MixAllTracks { get; set; }
+    /// <summary>Normalize loudness to about -14 LUFS (what YouTube plays at), single pass.</summary>
+    public bool NormalizeLoudness { get; set; }
 }
 
 public sealed record ExportCheck(bool Ok, double Duration, double VideoDuration, double AudioDuration, double VideoStart, double AudioStart, int Width, int Height, string Summary);
@@ -106,8 +111,22 @@ public static class Exporter
         return dst;
     }
 
-    private static async Task RunEncodeAsync(MediaInfo info, double start, double end, string output, string vf, string encoder,
-        ExportOptions opt, IProgress<double>? progress, CancellationToken ct)
+    /// <summary>The audio part of the filtergraph: one track or all of them mixed, then resampled to start at 0, optionally loudness-normalized.</summary>
+    public static (string? FilterComplex, string? AudioFilter, string? AudioMap) AudioPlan(int trackCount, ExportOptions opt)
+    {
+        if (trackCount <= 0) return (null, null, null);
+        var tail = "aresample=async=1:first_pts=0" + (opt.NormalizeLoudness ? ",loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000" : "");
+        if (opt.MixAllTracks && trackCount > 1)
+        {
+            var inputs = string.Concat(Enumerable.Range(0, trackCount).Select(i => $"[0:a:{i}]"));
+            // normalize=0: keep each track's own volume instead of dividing by the number of tracks.
+            return ($"{inputs}amix=inputs={trackCount}:duration=longest:normalize=0,{tail}[aout]", null, "[aout]");
+        }
+        return (null, tail, $"0:a:{Math.Clamp(opt.AudioTrack, 0, trackCount - 1)}");
+    }
+
+    /// <summary>The full ffmpeg argument list for one cut (kept separate so it can be checked without running ffmpeg).</summary>
+    public static List<string> BuildArgs(MediaInfo info, double start, double end, string output, string vf, string encoder, ExportOptions opt)
     {
         var inv = CultureInfo.InvariantCulture;
         var args = new List<string>
@@ -117,17 +136,28 @@ public static class Exporter
             "-ss", start.ToString("0.###", inv), "-i", info.Path, "-t", (end - start).ToString("0.###", inv),
             "-map", "0:v:0",
         };
-        if (info.AudioTracks.Count > 0)
-            args.AddRange(["-map", $"0:a:{Math.Clamp(opt.AudioTrack, 0, info.AudioTracks.Count - 1)}"]);
+        var (fc, af, amap) = AudioPlan(info.AudioTracks.Count, opt);
+        if (fc != null) args.AddRange(["-filter_complex", fc]);
+        if (amap != null) args.AddRange(["-map", amap]);
         args.AddRange(["-vf", vf]);
         if (encoder == "h264_nvenc")
             args.AddRange(["-c:v", "h264_nvenc", "-preset", "p5", "-tune", "hq", "-rc", "vbr", "-cq", opt.Quality.ToString(inv), "-b:v", "0", "-profile:v", "high"]);
         else
             args.AddRange(["-c:v", "libx264", "-preset", "medium", "-crf", opt.Quality.ToString(inv), "-profile:v", "high"]);
-        if (info.AudioTracks.Count > 0)
-            args.AddRange(["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-af", "aresample=async=1:first_pts=0"]);
+        if (amap != null)
+        {
+            args.AddRange(["-c:a", "aac", "-b:a", "192k", "-ar", "48000"]);
+            if (af != null) args.AddRange(["-af", af]);
+        }
         args.AddRange(["-fps_mode", "cfr", "-r", (info.Fps > 0 ? Math.Round(info.Fps, 3) : 60).ToString(inv),
             "-movflags", "+faststart", "-avoid_negative_ts", "make_zero", "-map_metadata", "-1", output]);
+        return args;
+    }
+
+    private static async Task RunEncodeAsync(MediaInfo info, double start, double end, string output, string vf, string encoder,
+        ExportOptions opt, IProgress<double>? progress, CancellationToken ct)
+    {
+        var args = BuildArgs(info, start, end, output, vf, encoder, opt);
 
         // 啟動 ffmpeg.exe。-progress pipe:1 讓它把進度一行一行印到 stdout，我們讀來更新進度條
         var psi = new ProcessStartInfo(FFmpegLocator.FFmpeg)

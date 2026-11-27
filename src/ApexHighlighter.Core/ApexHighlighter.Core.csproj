@@ -6,6 +6,9 @@
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="ApexHighlighter.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <None Update="keywords.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

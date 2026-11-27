@@ -45,6 +45,8 @@ public sealed class ObsWatcher : IAsyncDisposable
     public event Action<ObsState>? StateChanged;
     /// <summary>Raised on a thread-pool thread with the finished recording's full path.</summary>
     public event Action<string>? RecordingStopped;
+    /// <summary>Raised when OBS reports a path that is not an existing local video file (see <see cref="IsAcceptableRecordingPath"/>).</summary>
+    public event Action<string>? RecordingRejected;
 
     public ObsWatcher(string host, int port, string? password)
     {
@@ -70,12 +72,17 @@ public sealed class ObsWatcher : IAsyncDisposable
                 {
                     var msg = await ReceiveAsync(ws, ct);
                     if (msg == null) break;
-                    if (RecordingPathFromEvent(msg) is { } path) RecordingStopped?.Invoke(path);
+                    if (RecordingPathFromEvent(msg) is { } path)
+                    {
+                        // 只接受本機上真的存在的影片檔，不讓假冒的 OBS 叫我們去讀任意檔案或網址
+                        if (IsAcceptableRecordingPath(path)) RecordingStopped?.Invoke(path);
+                        else RecordingRejected?.Invoke(path);
+                    }
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
-            catch (ObsAuthException ex) { LastError = ex.Message; SetState(ObsState.AuthFailed); return; }
-            catch (Exception ex) { LastError = ex.Message; }
+            catch (ObsAuthException ex) { LastError = FriendlyError(ex, _host, _port); SetState(ObsState.AuthFailed); return; }
+            catch (Exception ex) { LastError = FriendlyError(ex, _host, _port); }
             SetState(ObsState.Disconnected);
             try { await Task.Delay(TimeSpan.FromSeconds(10), ct); } catch (OperationCanceledException) { break; }
         }
@@ -89,11 +96,48 @@ public sealed class ObsWatcher : IAsyncDisposable
         StateChanged?.Invoke(s);
     }
 
+    /// <summary>How long to wait for the TCP/WebSocket connection. OBS on the same PC answers in milliseconds.</summary>
+    public static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
+    /// <summary>Whole "Test connection" budget: connect + handshake + GetVersion.</summary>
+    public static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// "localhost" is dialled as 127.0.0.1: Windows otherwise tries ::1 first and waits ~2 s for each refused address,
+    /// which made a failed test take about 10 s. OBS's WebSocket server listens on IPv4.
+    /// </summary>
+    public static string DialHost(string host) =>
+        string.Equals(host.Trim(), "localhost", StringComparison.OrdinalIgnoreCase) ? "127.0.0.1" : host.Trim();
+
+    /// <summary>What went wrong, in the interface language, with what to do about it (instead of the raw .NET message).</summary>
+    // 把 .NET 的例外訊息換成看得懂的說明：OBS 沒開 / 沒啟用 WebSocket、連接埠上不是 OBS、要密碼、密碼錯。
+    public static string FriendlyError(Exception ex, string host, int port) => Classify(ex) switch
+    {
+        ObsFailure.NotReachable => Loc.F("obs.notReachable", host, port),
+        ObsFailure.NotObs => Loc.F("obs.notObs", host, port),
+        ObsFailure.NeedsPassword => Loc.T("obs.needPassword"),
+        ObsFailure.WrongPassword => Loc.T("obs.authFail"),
+        _ => Loc.F("obs.fail", ex.Message),
+    };
+
+    public static ObsFailure Classify(Exception ex)
+    {
+        if (ex is ObsAuthException a) return a.PasswordMissing ? ObsFailure.NeedsPassword : ObsFailure.WrongPassword;
+        if (ex is TimeoutException or OperationCanceledException) return ObsFailure.NotReachable;
+        for (var e = ex; e != null; e = e.InnerException)
+        {
+            if (e is System.Net.Sockets.SocketException or HttpRequestException) return ObsFailure.NotReachable;
+            if (e is WebSocketException w && w.WebSocketErrorCode == WebSocketError.NotAWebSocket) return ObsFailure.NotObs;
+        }
+        if (ex is WebSocketException) return ObsFailure.NotReachable;
+        if (ex is JsonException) return ObsFailure.NotObs;
+        return ObsFailure.Other;
+    }
+
     /// <summary>Connects once, asks OBS for its version, and disconnects. For the settings window's "Test connection" button.</summary>
     public static async Task<string> TestAsync(string host, int port, string? password, CancellationToken ct = default)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(8));
+        timeout.CancelAfter(TestTimeout);
         using var ws = await ConnectAsync(host, port, string.IsNullOrEmpty(password) ? null : password, 0, timeout.Token);
         var req = new JsonObject { ["op"] = 6, ["d"] = new JsonObject { ["requestType"] = "GetVersion", ["requestId"] = "v" } };
         await SendAsync(ws, req, timeout.Token);
@@ -117,8 +161,8 @@ public sealed class ObsWatcher : IAsyncDisposable
         {
             using (var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
             {
-                connectTimeout.CancelAfter(TimeSpan.FromSeconds(5));
-                try { await ws.ConnectAsync(new Uri($"ws://{host}:{port}"), connectTimeout.Token); }
+                connectTimeout.CancelAfter(ConnectTimeout);
+                try { await ws.ConnectAsync(new Uri($"ws://{DialHost(host)}:{port}"), connectTimeout.Token); }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new TimeoutException($"ws://{host}:{port} did not answer."); }
             }
 
@@ -128,7 +172,7 @@ public sealed class ObsWatcher : IAsyncDisposable
             var identify = new JsonObject { ["rpcVersion"] = 1, ["eventSubscriptions"] = events };
             if (d["authentication"] is { } auth)
             {
-                if (password == null) throw new ObsAuthException("OBS requires a password.");
+                if (password == null) throw new ObsAuthException("OBS requires a password.", passwordMissing: true);
                 identify["authentication"] = AuthString(password, auth["salt"]!.GetValue<string>(), auth["challenge"]!.GetValue<string>());
             }
             await SendAsync(ws, new JsonObject { ["op"] = 1, ["d"] = identify }, ct);
@@ -198,6 +242,31 @@ public sealed class ObsWatcher : IAsyncDisposable
         catch { }
     }
 
+    /// <summary>Video extensions OBS can record to.</summary>
+    internal static readonly string[] RecordingExtensions = [".mkv", ".mp4", ".mov", ".flv", ".ts", ".m4v", ".fmp4", ".webm"];
+
+    /// <summary>
+    /// True when a path from OBS is safe to open: an absolute local path (drive letter, not a URL, device path or
+    /// network share), with a video extension, that exists. Anything else could make FFmpeg read an arbitrary file or URL.
+    /// </summary>
+    public static bool IsAcceptableRecordingPath(string? path, Func<string, bool>? exists = null)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path.Contains('\0')) return false;
+        // Drive-letter paths only: C:\... — rules out http://, file://, \\server\share and \\?\ device paths.
+        if (path.Length < 4 || !char.IsAsciiLetter(path[0]) || path[1] != ':' || (path[2] != '\\' && path[2] != '/')) return false;
+        if (path.Contains("://", StringComparison.Ordinal)) return false;
+        if (!RecordingExtensions.Any(e => path.EndsWith(e, StringComparison.OrdinalIgnoreCase))) return false;
+        return exists != null ? exists(path) : File.Exists(path);
+    }
+
+    /// <summary>True for this PC (localhost, 127.x.x.x, ::1). Anything else goes over the network without encryption.</summary>
+    public static bool IsLoopbackHost(string? host)
+    {
+        var h = (host ?? "").Trim().Trim('[', ']');
+        if (h.Length == 0 || h.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return true;
+        return System.Net.IPAddress.TryParse(h, out var ip) && System.Net.IPAddress.IsLoopback(ip);
+    }
+
     public async ValueTask DisposeAsync()
     {
         _cts.Cancel();
@@ -206,4 +275,9 @@ public sealed class ObsWatcher : IAsyncDisposable
     }
 }
 
-public sealed class ObsAuthException(string message) : Exception(message);
+public enum ObsFailure { Other, NotReachable, NotObs, NeedsPassword, WrongPassword }
+
+public sealed class ObsAuthException(string message, bool passwordMissing = false) : Exception(message)
+{
+    public bool PasswordMissing { get; } = passwordMissing;
+}

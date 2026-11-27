@@ -4,4 +4,7 @@
     <Project Path="src/ApexHighlighter.App/ApexHighlighter.App.csproj" />
     <Project Path="src/ApexHighlighter.Cli/ApexHighlighter.Cli.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ApexHighlighter.Tests/ApexHighlighter.Tests.csproj" />
+  </Folder>
 </Solution>

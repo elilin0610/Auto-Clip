@@ -6,7 +6,7 @@ using Spectre.Console;
 // Program.cs — 命令列版（apexhl.exe）
 //
 // 跟 App 共用同一個 Core，只是外殼換成終端機。用 Spectre.Console 畫進度條、表格、顏色。
-//   apexhl scan / export / thumb / obswatch / ocr / synccheck
+//   apexhl scan / export / batch / thumb / obswatch / ocr / synccheck
 // 結構：上面是「依指令分派」，中間每個指令一個函式，最下面是共用小工具。
 //
 // Spectre.Console 的文字可以帶標記，例如 "[red]錯誤[/]" 會印成紅字。
@@ -30,11 +30,24 @@ string Opt(string name, string def)
     return i >= 0 && i + 1 < args.Length ? args[i + 1] : def;
 }
 
+bool Flag(string name) => Array.IndexOf(args, name) >= 0;
+
 // CLI output stays in Traditional Chinese unless --ui-lang en|zh-Hant|ja is given.
 Loc.Set(Opt("--ui-lang", "zh-Hant"));
 
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
+// 用到 FFmpeg 的指令先檢查版本：太舊或看不出版本就提醒（不擋）
+if (args[0] is "scan" or "export" or "batch" or "thumb" or "synccheck" or "ocr")
+{
+    try
+    {
+        var v = await FFmpegLocator.GetVersionAsync(cts.Token);
+        if (v != null && (v.TooOld || v.Unknown)) AnsiConsole.MarkupLine($"[yellow]⚠ {Markup.Escape(await FFmpegLocator.DescribeAsync(cts.Token))}[/]");
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException) { /* 找不到 FFmpeg 等錯誤交給各指令自己回報 */ }
+}
 
 try
 {
@@ -42,6 +55,7 @@ try
     {
         "scan" => await Scan(),
         "export" => await Export(),
+        "batch" => await Batch(),
         "thumb" => await Thumb(),
         "obswatch" => await ObsWatch(),
         "synccheck" => await SyncCheck(),
@@ -78,7 +92,13 @@ async Task<int> Scan()
         SampleFps = double.Parse(Opt("--fps", "2"), CultureInfo.InvariantCulture),
         OcrWidth = int.Parse(Opt("--width", "1280")),
         AudioTrack = int.Parse(Opt("--track", info.DefaultAudioTrack().ToString())),
+        MaxCandidates = int.Parse(Opt("--max", "3")),
+        MinScore = double.Parse(Opt("--min-score", "2"), CultureInfo.InvariantCulture),
+        MaxClipLength = double.Parse(Opt("--max-len", "120"), CultureInfo.InvariantCulture),
+        RegionOcr = !Flag("--no-region"),
+        VerifyCandidates = !Flag("--no-verify"),
     };
+    if (Opt("--prefer-lang", "") is { Length: > 0 } pref) opt.PreferredLanguage = pref;
     if (Opt("--workers", "") is { Length: > 0 } wk) opt.Workers = int.Parse(wk);
 
     ShowMediaInfo(info);
@@ -102,6 +122,7 @@ async Task<int> Scan()
         });
 
     var (json, txt) = ScanReport.Save(result, Opt("--report-dir", ScanReport.DefaultFolder));
+    ScanCache.Save(result);   // 介面之後打開同一支錄影，就直接讀回這次的結果
 
     var lang = result.Language ?? "?";
     AnsiConsole.MarkupLine($"遊戲語言 [{Accent}]{Markup.Escape(lang)}[/]{(result.LanguageConfident ? "" : " [grey](提示太少，不太確定)[/]")}" +
@@ -153,7 +174,7 @@ async Task<int> Scan()
 
 async Task<int> Export()
 {
-    if (!Need(5, "apexhl export <錄影檔> <開始> <結束> <輸出.mp4> [--format landscape|vcrop|vfit]")) return 2;
+    if (!Need(5, "apexhl export <錄影檔> <開始> <結束> <輸出.mp4> [--format landscape|vcrop|vfit] [--mix] [--loudnorm]")) return 2;
     var info = await MediaInfo.ProbeAsync(InputFile(args[1]), cts.Token);
     if (!TimeFmt.TryParse(args[2], out var s) || !TimeFmt.TryParse(args[3], out var e))
     {
@@ -164,6 +185,8 @@ async Task<int> Export()
     {
         AudioTrack = int.Parse(Opt("--track", "0")),
         Format = Opt("--format", "landscape") switch { "vcrop" => ExportFormat.VerticalCrop, "vfit" => ExportFormat.VerticalFit, _ => ExportFormat.Landscape },
+        MixAllTracks = Flag("--mix"),
+        NormalizeLoudness = Flag("--loudnorm"),
     };
     var (ow, oh) = Exporter.OutputSize(info.Width, info.Height, opt.Format);
     AnsiConsole.MarkupLine($"[{Accent}]{Markup.Escape(Path.GetFileName(info.Path))}[/]  {TimeFmt.Hms(s)} – {TimeFmt.Hms(e)}  →  {ow}×{oh}");
@@ -191,6 +214,90 @@ async Task<int> Export()
     return check.Ok ? 0 : 3;
 }
 
+async Task<int> Batch()
+{
+    // 多支錄影：掃描（CPU）和剪片（GPU）分兩站同時進行，一支掃完就去剪，下一支接著掃（Core 的 Pipeline）
+    // Several recordings: scanning (CPU) and exporting (GPU) run as two stations at once (Core.Pipeline).
+    string[] valued = ["--out", "--scan-workers", "--export-workers", "--format", "--track", "--lang", "--max", "--min-score", "--ui-lang"];
+    var inputs = new List<string>();
+    for (int i = 1; i < args.Length; i++)
+    {
+        if (valued.Contains(args[i])) { i++; continue; }
+        if (args[i].StartsWith("--")) continue;
+        var full = Path.GetFullPath(args[i]);
+        if (Directory.Exists(full))
+            inputs.AddRange(Directory.EnumerateFiles(full).Where(f => Path.GetExtension(f).ToLowerInvariant() is ".mp4" or ".mkv" or ".mov" or ".flv")
+                .Where(f => !f.EndsWith(".part.mp4", StringComparison.OrdinalIgnoreCase)).OrderBy(f => f));
+        else inputs.Add(InputFile(full));
+    }
+    if (inputs.Count == 0)
+    {
+        AnsiConsole.MarkupLine("[red]✘ 沒有錄影檔[/]");
+        AnsiConsole.MarkupLine($"  用法：[{Accent}]apexhl batch <錄影檔或資料夾…> --out <輸出資料夾> [--scan-workers 1] [--export-workers 2] [--no-export] [--no-verify][/]");
+        return 2;
+    }
+    var outDir = Path.GetFullPath(Opt("--out", Path.Combine(Path.GetDirectoryName(inputs[0])!, "highlights")));
+    Directory.CreateDirectory(outDir);
+    int scanWorkers = int.Parse(Opt("--scan-workers", "1"));
+    int exportWorkers = int.Parse(Opt("--export-workers", "2"));
+    bool doExport = !Flag("--no-export");
+    var format = Opt("--format", "landscape") switch { "vcrop" => ExportFormat.VerticalCrop, "vfit" => ExportFormat.VerticalFit, _ => ExportFormat.Landscape };
+    var gate = new object();
+    void Say(string markup) { lock (gate) AnsiConsole.MarkupLine($"[grey]{DateTime.Now:HH:mm:ss}[/] {markup}"); }
+
+    AnsiConsole.MarkupLine($"[bold]{inputs.Count}[/] 支錄影 → {PathLink(outDir)}  [grey](掃描 {scanWorkers} 支、剪片 {exportWorkers} 支同時進行)[/]");
+    var keywords = KeywordConfig.Load();
+
+    var results = await Pipeline.RunAsync(inputs,
+        async (file, ct) =>
+        {
+            var name = Markup.Escape(Path.GetFileName(file));
+            Say($"[{Accent}]掃描[/] {name}");
+            var info = await (await MediaInfo.ProbeAsync(file, ct)).WithTrackVolumesAsync(ct);
+            var opt = new ScanOptions
+            {
+                Language = Opt("--lang", "auto"),
+                AudioTrack = int.Parse(Opt("--track", info.DefaultAudioTrack().ToString())),
+                MaxCandidates = int.Parse(Opt("--max", "3")),
+                MinScore = double.Parse(Opt("--min-score", "2"), CultureInfo.InvariantCulture),
+                VerifyCandidates = !Flag("--no-verify"),
+            };
+            if (scanWorkers > 1) opt.Workers = Math.Max(2, opt.Workers / scanWorkers);   // 同時掃好幾支時，分掉 OCR worker
+            var result = await new Scanner(keywords).ScanAsync(info, opt, null, ct);
+            ScanReport.Save(result);
+            ScanCache.Save(result);
+            Say($"[{Accent}]掃完[/] {name}：{result.Candidates.Count} 段  [grey]({result.ScanSeconds:0.0} 秒)[/]");
+            return (Info: info, Result: result, Track: opt.AudioTrack);
+        }, scanWorkers,
+        async (file, scan, ct) =>
+        {
+            var row = new BatchRow(file, scan.Result.Candidates.Count, 0, 0, scan.Result.ScanSeconds, null);
+            if (!doExport || scan.Result.Candidates.Count == 0) return row;
+            var jobs = scan.Result.Candidates.Select((c, i) => new ExportJob(i + 1, c.Start, c.End)).ToList();
+            var eo = new ExportOptions { AudioTrack = scan.Track, Format = format };
+            var done = await ExportBatch.RunAsync(jobs, async (job, prog, token) =>
+            {
+                var target = Path.Combine(outDir, Exporter.SuggestName(scan.Info, job.Number, job.Start, job.End, format));
+                var f = await Exporter.ExportAsync(scan.Info, job.Start, job.End, target, eo, prog, token);
+                var check = await Exporter.VerifyAsync(f, job.End - job.Start, token, format);
+                return (f, check);
+            }, null, (i, r) => Say($"{(r.Ok ? "[green]✔[/]" : "[red]✘[/]")} {(r.File != null ? PathLink(r.File) : Markup.Escape(r.Error?.Message ?? ""))}"), null, ct);
+            return row with { Exported = done.Count(d => d.Ok), Failed = done.Count(d => !d.Ok) };
+        }, exportWorkers,
+        (file, ex) => new BatchRow(file, 0, 0, 0, 0, ex.Message),
+        cts.Token);
+
+    var table = new Table().Border(TableBorder.Rounded).BorderColor(Color.Grey35)
+        .AddColumn("錄影").AddColumn(new TableColumn("精華").RightAligned()).AddColumn(new TableColumn("已匯出").RightAligned())
+        .AddColumn(new TableColumn("掃描秒數").RightAligned()).AddColumn("問題");
+    foreach (var r in results)
+        table.AddRow(Markup.Escape(Path.GetFileName(r.File)), $"{r.Clips}", r.Failed > 0 ? $"[red]{r.Exported}/{r.Clips}[/]" : $"{r.Exported}",
+            $"{r.ScanSeconds:0.0}", r.Error != null ? $"[red]{Markup.Escape(r.Error)}[/]" : r.Failed > 0 ? $"[red]{r.Failed} 段匯出檢查沒過[/]" : "");
+    AnsiConsole.Write(table);
+    if (results.Any(r => r.Error != null)) return 2;
+    return results.Any(r => r.Failed > 0) ? 3 : 0;
+}
+
 async Task<int> Thumb()
 {
     if (!Need(4, "apexhl thumb <錄影檔> <秒> <輸出.jpg> [--width 192]")) return 2;
@@ -206,6 +313,7 @@ async Task<int> ObsWatch()
     // The password comes from an environment variable so it never ends up in shell history.
     var host = Opt("--host", "localhost"); var port = int.Parse(Opt("--port", "4455"));
     var pw = Environment.GetEnvironmentVariable("APEXHL_OBS_PASSWORD");
+    if (!ObsWatcher.IsLoopbackHost(host)) AnsiConsole.MarkupLine($"[yellow]⚠ {Markup.Escape(Loc.T("obs.remoteWarning"))}[/]");
     string version = "";
     try
     {
@@ -217,10 +325,9 @@ async Task<int> ObsWatch()
         AnsiConsole.MarkupLine("[red]✘ OBS 密碼錯誤[/]，請把密碼放進環境變數 APEXHL_OBS_PASSWORD");
         return 2;
     }
-    catch (Exception ex) when (ex is not OperationCanceledException)
+    catch (Exception ex) when (!cts.IsCancellationRequested)
     {
-        AnsiConsole.MarkupLine($"[red]✘ 連不到 OBS[/]：{Markup.Escape(ex.Message)}");
-        AnsiConsole.MarkupLine("[grey]  OBS 要開著，並在「工具 → WebSocket 伺服器設定」啟用伺服器[/]");
+        AnsiConsole.MarkupLine($"[red]✘[/] {Markup.Escape(ObsWatcher.FriendlyError(ex, host, port))}");
         return 2;
     }
     AnsiConsole.MarkupLine($"[green]✔[/] 已連線 OBS {Markup.Escape(version)}，等待錄影停止…  [grey](Ctrl+C 結束)[/]");
@@ -234,6 +341,8 @@ async Task<int> ObsWatch()
     };
     w.RecordingStopped += path =>
         AnsiConsole.MarkupLine($"[grey]{DateTime.Now:HH:mm:ss}[/] [{Accent}]■ 錄影結束[/] {PathLink(path)}");
+    w.RecordingRejected += path =>
+        AnsiConsole.MarkupLine($"[grey]{DateTime.Now:HH:mm:ss}[/] [yellow]⚠ {Markup.Escape(Loc.F("log.obsRejected", path))}[/]");
     w.Start();
     try { await Task.Delay(Timeout.Infinite, cts.Token); } catch (OperationCanceledException) { }
     return 0;
@@ -349,8 +458,9 @@ static void ShowHelp()
     AnsiConsole.Write(new Rule($"[bold {Accent}]apexhl[/] [grey]Apex 精華挑片 · 命令列版[/]").LeftJustified());
     var t = new Table().Border(TableBorder.None).HideHeaders()
         .AddColumn(new TableColumn("").NoWrap().PadRight(3)).AddColumn("");
-    t.AddRow($"[{Accent}]scan[/] <錄影檔>", "找出最多 3 段精華\n[grey]--lang auto|en|zh-Hant…  --fps 2  --width 1280  --workers N  --track N[/]");
-    t.AddRow($"[{Accent}]export[/] <錄影檔> <開始> <結束> <輸出.mp4>", "剪出一段\n[grey]--format landscape|vcrop|vfit  --track N[/]");
+    t.AddRow($"[{Accent}]scan[/] <錄影檔>", "找出精華（預設最多 3 段）\n[grey]--lang auto|en|zh-Hant…  --prefer-lang en  --fps 2  --width 1280  --workers N  --track N\n--max 3  --min-score 2  --max-len 120（0 = 不限）  --no-region（每張都讀整個畫面）  --no-verify（不做二次確認）[/]");
+    t.AddRow($"[{Accent}]export[/] <錄影檔> <開始> <結束> <輸出.mp4>", "剪出一段\n[grey]--format landscape|vcrop|vfit  --track N  --mix（混合所有音軌）  --loudnorm（音量標準化）[/]");
+    t.AddRow($"[{Accent}]batch[/] <錄影檔或資料夾…>", "一次處理好幾支：掃描和剪片同時進行，一支掃完就剪\n[grey]--out <資料夾>  --scan-workers 1  --export-workers 2  --format landscape|vcrop|vfit  --no-export  --no-verify[/]");
     t.AddRow($"[{Accent}]thumb[/] <錄影檔> <秒> <輸出.jpg>", "存一張縮圖  [grey]--width 192[/]");
     t.AddRow($"[{Accent}]obswatch[/]", "等 OBS 停止錄影  [grey]--host localhost --port 4455，密碼放 APEXHL_OBS_PASSWORD[/]");
     t.AddRow($"[{Accent}]ocr[/] <錄影檔> <秒>", "列出該時間畫面上 OCR 讀到的字");
@@ -395,3 +505,5 @@ static async Task<byte[]> RunRaw(string path, double t, int w, int h)
     await p.WaitForExitAsync();
     return ms.ToArray();
 }
+
+sealed record BatchRow(string File, int Clips, int Exported, int Failed, double ScanSeconds, string? Error);

@@ -24,7 +24,9 @@ namespace ApexHighlighter.App;
 //   片段清單          勾選、選取、微調起訖（±1 秒、設為目前位置）、手動新增
 //   播放器與時間軸    播放 / 暫停 / 跳轉、DrawMarkers 畫片段色塊和刻度、拖曳把手改起訖
 //   匯出              依勾選的片段逐一呼叫 Exporter，再 VerifyAsync 檢查
-//   OBS               錄影停止 → 自動匯入並掃描；正在忙就排隊等
+//   OBS / 佇列        錄影停止或一次拖進好幾支 → 排進 FileQueue，一支一支匯入並掃描（忙的時候不會漏掉任何一支）
+//   掃描結果快取      ScanCache：重開同一支錄影直接讀回上次的結果
+//   匯出的「一段失敗繼續下一段」在 Core 的 ExportBatch；起訖時間的防呆在 Core 的 ClipRange
 //
 // WPF 小提醒：只有 UI 執行緒能改畫面，背景工作要用 Dispatcher 切回來。
 // =====================================================================================
@@ -49,7 +51,8 @@ public partial class MainWindow : Window
     private bool _fillingFormats;
 
     private ObsWatcher? _obs;
-    private string? _pendingObsPath;
+    // Recordings waiting to be imported and scanned (OBS stops while busy, or several files dropped at once).
+    private readonly FileQueue _queue = new();
 
     // Game language found by the last scan (null = not scanned yet). Always detected automatically.
     private string? _detectedGameLang;
@@ -64,6 +67,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        DarkTitleBar.Attach(this);
         ClipList.ItemsSource = _clips;
         _clips.CollectionChanged += (_, e) =>
         {
@@ -79,7 +83,7 @@ public partial class MainWindow : Window
 
         var st = App.Settings;
         OutDirBox.Text = !string.IsNullOrWhiteSpace(st.OutputDir) ? st.OutputDir
-            : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Apex精華");
+            : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), Loc.T("dir.default"));
         RestorePlacement();
         Closing += (_, _) => SaveSettings();
         Closed += async (_, _) => await StopObsAsync();
@@ -87,8 +91,8 @@ public partial class MainWindow : Window
         try { _cfg = KeywordConfig.Load(); }
         catch (Exception ex) { Log(Loc.F("log.keywordsFail", ex.Message)); }
 
-        if (FFmpegLocator.TryFind(out var dir)) Log(Loc.F("log.ffmpeg", dir));
-        else Log(Loc.T("err.ffmpegMissing"));
+        // 記下 FFmpeg 從哪裡找到、什麼版本；太舊會提醒更新
+        _ = LogFFmpegAsync();
         Log(Loc.F("log.ocrLangs", string.Join(Loc.T("list.sep"), SafeOcrLanguages())));
         SizeChanged += (_, _) => DrawMarkers();
 
@@ -96,10 +100,13 @@ public partial class MainWindow : Window
         Closed += (_, _) => Loc.Changed -= OnLanguageChanged;
         ApplyLanguage();
         FormatBox.SelectedIndex = (int)st.ExportFormat;
+        MixBox.IsChecked = st.MixAllTracks;
+        LoudnormBox.IsChecked = st.NormalizeLoudness;
+        AudioBox.SelectionChanged += (_, _) => UpdatePreviewTrackHint();
         RestartObs();
 
-        var args = Environment.GetCommandLineArgs();
-        if (args.Length > 1 && File.Exists(args[1])) Loaded += async (_, _) => await OpenFileAsync(args[1]);
+        var args = Environment.GetCommandLineArgs().Skip(1).Where(File.Exists).ToList();
+        if (args.Count > 0) Loaded += async (_, _) => await OpenManyAsync(args);
     }
 
     private static IEnumerable<string> SafeOcrLanguages()
@@ -140,7 +147,24 @@ public partial class MainWindow : Window
         s.WindowMaximized = WindowState == WindowState.Maximized;
         s.OutputDir = OutDirBox.Text.Trim();
         s.ExportFormat = SelectedFormat;
+        s.MixAllTracks = MixBox.IsChecked == true;
+        s.NormalizeLoudness = LoudnormBox.IsChecked == true;
         s.Save();
+    }
+
+    private void AudioOption_Changed(object sender, RoutedEventArgs e)
+    {
+        App.Settings.MixAllTracks = MixBox.IsChecked == true;
+        App.Settings.NormalizeLoudness = LoudnormBox.IsChecked == true;
+        App.Settings.Save();
+        UpdatePreviewTrackHint();
+    }
+
+    /// <summary>The preview player can only play the file's default track, so say so when the export will sound different.</summary>
+    private void UpdatePreviewTrackHint()
+    {
+        bool differs = _info is { AudioTracks.Count: > 1 } && (AudioBox.SelectedIndex > 0 || MixBox.IsChecked == true);
+        PreviewTrackHint.Visibility = differs ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OutDirBox_LostFocus(object sender, RoutedEventArgs e)
@@ -189,6 +213,7 @@ public partial class MainWindow : Window
             if (state is ObsState.Connected or ObsState.AuthFailed) Log(Loc.T("obs.state." + state));
         });
         w.RecordingStopped += path => Dispatcher.BeginInvoke(async () => { if (_obs == w) await OnObsRecordingStoppedAsync(path); });
+        w.RecordingRejected += path => Dispatcher.BeginInvoke(() => { if (_obs == w) Log(Loc.F("log.obsRejected", path)); });
         ObsText.Visibility = Visibility.Visible;
         UpdateObsText();
         w.Start();
@@ -214,22 +239,60 @@ public partial class MainWindow : Window
         });
     }
 
-    /// <summary>OBS finished a recording: import it and scan it, or queue it if something is already running.</summary>
-    private async Task OnObsRecordingStoppedAsync(string path)
+    /// <summary>OBS finished a recording: queue it, and start on it right away if nothing else is running.</summary>
+    private async Task LogFFmpegAsync()
     {
-        if (_cts != null) { _pendingObsPath = path; Log(Loc.F("log.obsBusy", path)); return; }
-        await Task.Delay(1500);   // Give OBS a moment to finish writing the file.
-        if (!File.Exists(path)) { Log(Loc.F("log.obsMissing", path)); return; }
-        Log(Loc.F("log.obsRecording", path));
-        await OpenFileAsync(path);
-        if (_info != null && string.Equals(_info.Path, path, StringComparison.OrdinalIgnoreCase)) await RunScanAsync();
+        try { Log(await FFmpegLocator.DescribeAsync()); }
+        catch (Exception ex) { Log(Loc.F("log.ffmpeg", ex.Message)); }
     }
 
-    private void RunPendingObs()
+    private async Task OnObsRecordingStoppedAsync(string path)
     {
-        if (_pendingObsPath is not { } p) return;
-        _pendingObsPath = null;
-        Dispatcher.BeginInvoke(async () => await OnObsRecordingStoppedAsync(p));
+        await Task.Delay(1500);   // Give OBS a moment to finish writing the file.
+        if (_cts != null || _queue.Count > 0)
+        {
+            if (_queue.Enqueue(path)) Log(Loc.F("log.obsBusy", path));
+            return;
+        }
+        Log(Loc.F("log.obsRecording", path));
+        await ProcessAsync(path);
+    }
+
+    /// <summary>Several recordings at once (drag &amp; drop, file dialog, command line): open one now, scan the rest one by one.</summary>
+    private async Task OpenManyAsync(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0) return;
+        if (paths.Count == 1 && _cts == null) { await OpenFileAsync(paths[0]); return; }
+        foreach (var p in paths) if (_queue.Enqueue(p)) Log(Loc.F("log.queued", p, _queue.Count));
+        Log(Loc.F("log.batch", paths.Count));
+        if (_cts == null) RunPending();
+    }
+
+    /// <summary>Imports a queued recording and scans it, unless its previous scan was loaded from the cache.</summary>
+    private async Task ProcessAsync(string path)
+    {
+        bool scanning = false;
+        try
+        {
+            if (!File.Exists(path)) { Log(Loc.F("log.obsMissing", path)); return; }
+            var cached = await OpenFileAsync(path);
+            if (!cached && _info != null && string.Equals(_info.Path, path, StringComparison.OrdinalIgnoreCase))
+            {
+                scanning = true;
+                await RunScanAsync();   // its finally block picks up the next queued file
+            }
+        }
+        finally
+        {
+            if (!scanning) RunPending();
+        }
+    }
+
+    /// <summary>Starts on the next queued recording, if any and if nothing is running.</summary>
+    private void RunPending()
+    {
+        if (_cts != null || !_queue.TryDequeue(out var p)) return;
+        Dispatcher.BeginInvoke(async () => await ProcessAsync(p));
     }
 
     // ───────────── 介面語言切換與顯示文字 ─────────────
@@ -299,18 +362,25 @@ public partial class MainWindow : Window
             Title = Loc.T("dlg.openTitle"),
             Filter = Loc.T("dlg.filter"),
             InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+            Multiselect = true,
         };
-        if (dlg.ShowDialog(this) == true) await OpenFileAsync(dlg.FileName);
+        if (dlg.ShowDialog(this) == true) await OpenManyAsync(dlg.FileNames);
     }
 
     private async void Window_Drop(object sender, DragEventArgs e)
     {
-        if (e.Data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } files) await OpenFileAsync(files[0]);
+        if (e.Data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } files)
+            await OpenManyAsync(files.Where(File.Exists).ToList());
     }
 
-    private async Task OpenFileAsync(string path)
+    /// <summary>Loads a recording into the player. Returns true when its previous scan was found and shown.</summary>
+    private async Task<bool> OpenFileAsync(string path)
     {
-        if (_cts != null) { MessageBox.Show(this, Loc.T("msg.busy"), Title); return; }
+        if (_cts != null)
+        {
+            if (_queue.Enqueue(path)) Log(Loc.F("log.queued", path, _queue.Count));
+            return false;
+        }
         try
         {
             SetBusy(true, Loc.T("st.reading"));
@@ -337,13 +407,25 @@ public partial class MainWindow : Window
             PlayerHint.Visibility = Visibility.Collapsed;
             Log(Loc.F("log.imported", path, info.Width, info.Height, TimeFmt.Hms(info.Duration), info.AudioTracks.Count));
             SetHint("hint.imported");
+            UpdatePreviewTrackHint();
             SetBusy(false, Loc.T("st.ready"));
+
+            // Seen this exact file before? Show the previous scan instead of making the user wait for a new one.
+            if (ScanCache.TryLoad(path) is { } prev)
+            {
+                ShowScanResult(prev.Result);
+                Log(Loc.F("log.cacheLoaded", prev.SavedAt.ToString("yyyy-MM-dd HH:mm")));
+                return true;
+            }
+            return false;
         }
         catch (Exception ex)
         {
             SetBusy(false, Loc.T("st.importFailed"));
             Log(Loc.F("log.importFailed", ex.Message));
-            MessageBox.Show(this, ex.Message, Loc.T("st.importFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
+            // While working through a queue nobody may be watching; don't stop it with a dialog.
+            if (_queue.Count == 0) MessageBox.Show(this, ex.Message, Loc.T("st.importFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
         }
     }
 
@@ -354,10 +436,15 @@ public partial class MainWindow : Window
     private async Task RunScanAsync()
     {
         if (_info == null || _cfg == null || _cts != null) return;
+        var st = App.Settings;
         var opt = new ScanOptions
         {
             Language = "auto",
+            PreferredLanguage = st.LastGameLanguage,
             AudioTrack = Math.Max(0, AudioBox.SelectedIndex),
+            MaxCandidates = Math.Max(1, st.MaxCandidates),
+            MinScore = st.MinScore,
+            MaxClipLength = st.MaxClipLength,
         };
         _cts = new CancellationTokenSource();
         SetBusy(true, Loc.T("st.scanning"));
@@ -380,17 +467,14 @@ public partial class MainWindow : Window
             var result = await Task.Run(() => new Scanner(_cfg).ScanAsync(_info, opt, progress, _cts.Token));
             string reportPath = "";
             try { reportPath = ScanReport.Save(result).Text; } catch (Exception ex) { Log(Loc.F("log.reportFail", ex.Message)); }
+            ScanCache.Save(result);
+            if (result.LanguageConfident && result.Language != null && st.LastGameLanguage != result.Language)
+            {
+                st.LastGameLanguage = result.Language;
+                st.Save();
+            }
 
-            foreach (var c in _clips.Where(c => c.IsAuto).ToList()) _clips.Remove(c);
-            foreach (var c in result.Candidates) _clips.Add(ClipItem.FromCandidate(c));
-            SortClips();
-            _ticks = result.Events.Select(ev => (ev.Time, ev.Kind)).ToList();
-            DrawMarkers();
-            _ = LoadThumbnailsAsync();
-
-            _detectedGameLang = result.Language;
-            _gameLangSure = result.LanguageConfident;
-            ApplyLanguage();
+            ShowScanResult(result);
             Log(Loc.F("log.scanDone", result.ScanSeconds, result.ScanSeconds > 0 ? result.Duration / result.ScanSeconds : 0, result.Language, result.OcrLanguage));
             if (result.PromptPosition != null) Log(result.PromptPosition);
             foreach (var n in result.Notes) Log(Loc.F("rep.note", n));
@@ -398,11 +482,7 @@ public partial class MainWindow : Window
             foreach (var c in result.Clusters.Where(c => !c.Accepted))
                 Log(Loc.F("log.skipped", TimeFmt.Hms(c.Start), TimeFmt.Hms(c.End), c.RejectReason));
             if (reportPath.Length > 0) Log(Loc.F("log.report", reportPath));
-
-            if (result.Candidates.Count == 0) SetHint("hint.none");
-            else SetHint("hint.found", result.Candidates.Count);
             SetBusy(false, Loc.F("st.scanDone", result.Candidates.Count));
-            if (_clips.Count > 0) ClipList.SelectedIndex = 0;
         }
         catch (OperationCanceledException) { SetBusy(false, Loc.T("st.cancelled")); Log(Loc.T("log.scanCancelled")); }
         catch (Exception ex)
@@ -411,7 +491,25 @@ public partial class MainWindow : Window
             Log(Loc.F("log.scanFailed", ex.Message));
             MessageBox.Show(this, ex.Message, Loc.T("st.scanFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
         }
-        finally { _cts?.Dispose(); _cts = null; UpdateButtons(); RunPendingObs(); }
+        finally { _cts?.Dispose(); _cts = null; UpdateButtons(); RunPending(); }
+    }
+
+    /// <summary>Puts a scan result (new or from the cache) on screen: suggested clips, timeline ticks, detected game language.</summary>
+    private void ShowScanResult(ScanResult result)
+    {
+        foreach (var c in _clips.Where(c => c.IsAuto).ToList()) _clips.Remove(c);
+        foreach (var c in result.Candidates) _clips.Add(ClipItem.FromCandidate(c));
+        SortClips();
+        _ticks = result.Events.Select(ev => (ev.Time, ev.Kind)).ToList();
+        DrawMarkers();
+        _ = LoadThumbnailsAsync();
+
+        _detectedGameLang = result.Language;
+        _gameLangSure = result.LanguageConfident;
+        ApplyLanguage();
+        if (result.Candidates.Count == 0) SetHint("hint.none");
+        else SetHint("hint.found", result.Candidates.Count);
+        if (_clips.Count > 0) ClipList.SelectedIndex = 0;
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => _cts?.Cancel();
@@ -430,7 +528,12 @@ public partial class MainWindow : Window
         try { Directory.CreateDirectory(outDir); }
         catch (Exception ex) { MessageBox.Show(this, Loc.F("msg.cantCreateDir", ex.Message), Title); return; }
 
-        var opt = new ExportOptions { AudioTrack = Math.Max(0, AudioBox.SelectedIndex), Format = SelectedFormat };
+        var opt = new ExportOptions
+        {
+            AudioTrack = Math.Max(0, AudioBox.SelectedIndex), Format = SelectedFormat,
+            MixAllTracks = MixBox.IsChecked == true, NormalizeLoudness = LoudnormBox.IsChecked == true,
+        };
+        var info = _info;
         App.Settings.OutputDir = outDir;
         App.Settings.Save();
         _cts = new CancellationTokenSource();
@@ -438,34 +541,50 @@ public partial class MainWindow : Window
         PausePlayer();
         try
         {
-            bool nvenc = await Exporter.NvencAvailableAsync(_cts.Token);
+            var ct = _cts.Token;
+            bool nvenc = await Exporter.NvencAvailableAsync(ct);
             Log(Loc.F("log.exportStart", items.Count, Loc.T(nvenc ? "exp.encNvenc" : "exp.encX264"), opt.AudioTrack + 1));
-            int i = 0;
-            foreach (var c in items)
+            var jobs = items.Select(c => new ExportJob(c.Number, c.Start, c.End)).ToList();
+            var sw = new Stopwatch();
+            int current = 0;
+            var overall = new Progress<double>(p =>
             {
-                i++;
-                var name = Exporter.SuggestName(_info, c.Number, c.Start, c.End, opt.Format);
-                var outPath = UniquePath(System.IO.Path.Combine(outDir, name));
-                int idx = i;
-                var prog = new Progress<double>(p =>
+                Progress.Value = p;
+                StatusText.Text = Loc.F("st.exportProgress", current + 1, items.Count, Math.Clamp(p * items.Count - current, 0, 1));
+            });
+            // 一段失敗只記下來，繼續匯出下一段（ExportBatch）；按取消才整批停
+            var results = await ExportBatch.RunAsync(jobs,
+                async (job, prog, token) =>
                 {
-                    Progress.Value = ((idx - 1) + p) / items.Count;
-                    StatusText.Text = Loc.F("st.exportProgress", idx, items.Count, p);
-                });
-                var sw = Stopwatch.StartNew();
-                c.SetStatus(ClipStatus.Exporting);
-                var file = await Task.Run(() => Exporter.ExportAsync(_info, c.Start, c.End, outPath, opt, prog, _cts.Token));
-                StatusText.Text = Loc.F("st.checking", idx, items.Count);
-                var check = await Task.Run(() => Exporter.VerifyAsync(file, c.End - c.Start, _cts.Token, opt.Format));
-                c.SetStatus(check.Ok ? ClipStatus.Done : ClipStatus.Problem, System.IO.Path.GetFileName(file));
-                Log(Loc.F("log.exportOne", c.Number, file, sw.Elapsed.TotalSeconds, check.Summary));
-            }
-            SetBusy(false, Loc.F("st.exportDone", items.Count));
+                    var outPath = UniquePath(System.IO.Path.Combine(outDir, Exporter.SuggestName(info, job.Number, job.Start, job.End, opt.Format)));
+                    var file = await Task.Run(() => Exporter.ExportAsync(info, job.Start, job.End, outPath, opt, prog, token));
+                    await Dispatcher.InvokeAsync(() => StatusText.Text = Loc.F("st.checking", current + 1, items.Count));
+                    var check = await Task.Run(() => Exporter.VerifyAsync(file, job.End - job.Start, token, opt.Format));
+                    return (file, check);
+                },
+                (i, _) => { current = i; sw.Restart(); items[i].SetStatus(ClipStatus.Exporting); },
+                (i, r) =>
+                {
+                    var c = items[i];
+                    if (r.Error != null)
+                    {
+                        c.SetStatus(ClipStatus.Problem, r.Error.Message.Split('\n')[0]);
+                        Log(Loc.F("log.exportOneFailed", c.Number, r.Error.Message));
+                    }
+                    else
+                    {
+                        c.SetStatus(r.Check!.Ok ? ClipStatus.Done : ClipStatus.Problem, System.IO.Path.GetFileName(r.File!));
+                        Log(Loc.F("log.exportOne", c.Number, r.File, sw.Elapsed.TotalSeconds, r.Check.Summary));
+                    }
+                },
+                overall, ct);
+            int failed = results.Count(r => r.Error != null);
+            SetBusy(false, failed == 0 ? Loc.F("st.exportDone", items.Count) : Loc.F("st.exportPartial", items.Count - failed, items.Count, failed));
             Log(Loc.F("log.exportDone", outDir));
         }
         catch (OperationCanceledException)
         {
-            foreach (var c in items.Where(c => c.Status == Loc.T("clip.exporting"))) c.SetStatus(ClipStatus.None);
+            foreach (var c in items.Where(c => c.IsExporting)) c.SetStatus(ClipStatus.None);
             SetBusy(false, Loc.T("st.cancelled"));
             Log(Loc.T("log.exportCancelled"));
         }
@@ -475,7 +594,7 @@ public partial class MainWindow : Window
             Log(Loc.F("log.exportFailed", ex.Message));
             MessageBox.Show(this, ex.Message, Loc.T("st.exportFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
         }
-        finally { _cts?.Dispose(); _cts = null; UpdateButtons(); RunPendingObs(); }
+        finally { _cts?.Dispose(); _cts = null; UpdateButtons(); RunPending(); }
     }
 
     private static string UniquePath(string p)
@@ -549,8 +668,7 @@ public partial class MainWindow : Window
         if (Selected is not { } c || _info == null) return;
         if (TimeFmt.TryParse(box.Text, out var t))
         {
-            t = Math.Clamp(t, 0, _info.Duration);
-            if (start) c.Start = t; else c.End = t;
+            if (start) c.MoveStart(t, _info.Duration); else c.MoveEnd(t, _info.Duration);
             SeekTo(start ? c.Start : Math.Max(c.Start, c.End - 3));
             DrawMarkers();
         }
@@ -562,8 +680,8 @@ public partial class MainWindow : Window
         if (Selected is not { } c || _info == null) return;
         var parts = ((string)((Button)sender).Tag).Split(':');
         var delta = double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture);
-        if (parts[0] == "s") { c.Start = Math.Clamp(c.Start + delta, 0, _info.Duration); SeekTo(c.Start); }
-        else { c.End = Math.Clamp(c.End + delta, 0, _info.Duration); SeekTo(c.End); }
+        if (parts[0] == "s") { c.MoveStart(c.Start + delta, _info.Duration); SeekTo(c.Start); }
+        else { c.MoveEnd(c.End + delta, _info.Duration); SeekTo(c.End); }
         DrawMarkers();
     }
 
@@ -571,9 +689,9 @@ public partial class MainWindow : Window
 
     private void SetHere(bool start)
     {
-        if (Selected is not { } c) return;
+        if (Selected is not { } c || _info == null) return;
         var pos = Player.Position.TotalSeconds;
-        if (start) c.Start = pos; else c.End = pos;
+        if (start) c.MoveStart(pos, _info.Duration); else c.MoveEnd(pos, _info.Duration);
         DrawMarkers();
     }
 
@@ -696,8 +814,8 @@ public partial class MainWindow : Window
     {
         if (_dragEdge == null || Selected is not { } c || _info == null) return;
         var t = Math.Clamp(e.GetPosition(Markers).X / Math.Max(1, Markers.ActualWidth) * _info.Duration, 0, _info.Duration);
-        if (_dragEdge == "s") { c.Start = Math.Min(t, c.End - 1); SeekTo(c.Start); }
-        else { c.End = Math.Max(t, c.Start + 1); SeekTo(c.End); }
+        if (_dragEdge == "s") { c.MoveStart(t, _info.Duration); SeekTo(c.Start); }
+        else { c.MoveEnd(t, _info.Duration); SeekTo(c.End); }
         DrawMarkers();
     }
 

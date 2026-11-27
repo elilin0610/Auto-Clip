@@ -3,7 +3,8 @@ using System.Runtime.CompilerServices;
 using System.Windows.Media;
 using ApexHighlighter.Core;
 
-namespace ApexHighlighter.App;
+namespace ApexHighlighter.App;
+
 
 // =====================================================================================
 // ClipItem.cs — 片段清單裡的「一張卡片」
@@ -43,13 +44,31 @@ public sealed class ClipItem : INotifyPropertyChanged
     private ImageSource? _thumbnail;
     public ImageSource? Thumbnail { get => _thumbnail; set { _thumbnail = value; Raise(); } }
 
-    public string Reason => _candidate != null ? _candidate.Reason : Loc.T("clip.manual");
+    // 只列出目前範圍內的觸發原因：使用者把片段縮短後，範圍外的擊倒 / 淘汰就不再顯示。
+    private List<GameEvent> InRange => _candidate!.EventsWithin(_start, _end);
 
-    public string Detail => _candidate != null
-        ? Loc.F("clip.detail", _candidate.Score,
-            string.Join(Loc.T("list.sep"), _candidate.Events.Select(e => $"{TimeFmt.Hms(e.Time)} {e.Kind.Name()}")),
-            _candidate.StartNote)
-        : Loc.F("clip.manualDetail", TimeFmt.Hms(_manualCenter));
+    public string Reason
+    {
+        get
+        {
+            if (_candidate == null) return Loc.T("clip.manual");
+            var events = InRange;
+            return events.Count > 0 ? Candidate.DescribeEvents(events) : Loc.T("clip.noEventsInRange");
+        }
+    }
+
+    public string Detail
+    {
+        get
+        {
+            if (_candidate == null) return Loc.F("clip.manualDetail", TimeFmt.Hms(_manualCenter));
+            var events = InRange;
+            var list = string.Join(Loc.T("list.sep"), events.Select(e => $"{TimeFmt.Hms(e.Time)} {e.Kind.Name()}"));
+            int outside = _candidate.Events.Count - events.Count;
+            if (outside > 0) list = (list.Length > 0 ? list + Loc.T("list.sep") : "") + Loc.F("clip.outsideRange", outside);
+            return Loc.F("clip.detail", _candidate.Score, list, _candidate.StartNote);
+        }
+    }
 
     public string Source => Loc.T(IsAuto ? "clip.auto" : "clip.manualSrc");
 
@@ -69,11 +88,19 @@ public sealed class ClipItem : INotifyPropertyChanged
 
     public bool Keep { get => _keep; set { _keep = value; Raise(); } }
 
+    /// <summary>Moves the start, never past the end (stays at least 1 s long) or outside the recording.</summary>
+    public void MoveStart(double t, double duration) => Start = ClipRange.ClampStart(t, End, duration);
+
+    /// <summary>Moves the end, never before the start (stays at least 1 s long) or past the end of the recording.</summary>
+    public void MoveEnd(double t, double duration) => End = ClipRange.ClampEnd(t, Start, duration);
+
     public void SetStatus(ClipStatus status, string file = "")
     {
         _status = status; _statusFile = file;
         Raise(nameof(Status));
     }
+
+    public bool IsExporting => _status == ClipStatus.Exporting;
 
     public string Status => _status switch
     {
@@ -91,6 +118,7 @@ public sealed class ClipItem : INotifyPropertyChanged
     private void RaiseTimes()
     {
         Raise(nameof(Title)); Raise(nameof(Length)); Raise(nameof(StartText)); Raise(nameof(EndText));
+        Raise(nameof(Reason)); Raise(nameof(Detail));
     }
 
     private void Refresh()

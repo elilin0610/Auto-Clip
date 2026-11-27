@@ -20,11 +20,29 @@
             <Setter Property="CaretBrush" Value="#E6E8EE"/>
             <Setter Property="Padding" Value="4,3"/>
         </Style>
+        <!-- Own template so hover stays dark (the Windows default turns light blue and hides the text). -->
         <Style TargetType="Button">
             <Setter Property="Foreground" Value="#E6E8EE"/>
             <Setter Property="Background" Value="#2A2E37"/>
             <Setter Property="BorderBrush" Value="#3A3F4A"/>
             <Setter Property="Padding" Value="14,5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="#353A45"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="b" Property="Background" Value="#40465A"/></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="#5A6170"/></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="TextBlock" x:Key="Label">
             <Setter Property="Foreground" Value="#9AA1AE"/>
@@ -37,6 +55,28 @@
                   DisplayMemberPath="NativeName" SelectionChanged="UiLanguageBox_SelectionChanged"
                   AutomationProperties.Name="{l:Tr set.uiLang}"/>
         <TextBlock Text="{l:Tr set.uiLangNote}" TextWrapping="Wrap" Foreground="#9AA1AE" FontSize="12" Margin="0,8,0,0"/>
+
+        <Border BorderBrush="#2E323B" BorderThickness="0,1,0,0" Margin="0,18,0,14"/>
+
+        <TextBlock Text="{l:Tr set.scan}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="80"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Style="{StaticResource Label}" Text="{l:Tr set.maxClips}"/>
+            <TextBox Grid.Column="1" x:Name="MaxClipsBox" AutomationProperties.Name="{l:Tr set.maxClips}"/>
+            <TextBlock Grid.Row="1" Style="{StaticResource Label}" Text="{l:Tr set.minScore}" Margin="0,6,0,0"/>
+            <TextBox Grid.Row="1" Grid.Column="1" x:Name="MinScoreBox" Margin="0,6,0,0" AutomationProperties.Name="{l:Tr set.minScore}"/>
+            <TextBlock Grid.Row="2" Style="{StaticResource Label}" Text="{l:Tr set.maxLen}" Margin="0,6,0,0"/>
+            <TextBox Grid.Row="2" Grid.Column="1" x:Name="MaxLenBox" Margin="0,6,0,0" AutomationProperties.Name="{l:Tr set.maxLen}"/>
+        </Grid>
+        <TextBlock Text="{l:Tr set.scanNote}" TextWrapping="Wrap" Foreground="#9AA1AE" FontSize="12" Margin="0,8,0,0"/>
 
         <Border BorderBrush="#2E323B" BorderThickness="0,1,0,0" Margin="0,18,0,14"/>
 
@@ -56,12 +96,15 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <TextBlock Style="{StaticResource Label}" Text="{l:Tr set.obsHost}" Margin="0,0,8,0"/>
-            <TextBox Grid.Column="1" x:Name="ObsHostBox" AutomationProperties.Name="{l:Tr set.obsHost}"/>
+            <TextBox Grid.Column="1" x:Name="ObsHostBox" AutomationProperties.Name="{l:Tr set.obsHost}" TextChanged="ObsHostBox_TextChanged"/>
             <TextBlock Grid.Column="2" Style="{StaticResource Label}" Text="{l:Tr set.obsPort}" Margin="12,0,8,0"/>
             <TextBox Grid.Column="3" x:Name="ObsPortBox" AutomationProperties.Name="{l:Tr set.obsPort}"/>
             <TextBlock Grid.Row="1" Style="{StaticResource Label}" Text="{l:Tr set.obsPassword}" Margin="0,8,8,0"/>
             <PasswordBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" x:Name="ObsPasswordBox" Margin="0,8,0,0" AutomationProperties.Name="{l:Tr set.obsPassword}"/>
         </Grid>
+        <!-- 位址不是本機時提醒：OBS WebSocket 沒有加密 -->
+        <TextBlock x:Name="ObsHostWarning" Text="{l:Tr obs.remoteWarning}" TextWrapping="Wrap" Foreground="#F2C14E" FontSize="12"
+                   Margin="0,8,0,0" Visibility="Collapsed"/>
         <DockPanel Margin="0,10,0,0">
             <Button DockPanel.Dock="Left" Click="ObsTest_Click" x:Name="ObsTestButton" Content="{l:Tr set.obsTest}"/>
             <TextBlock x:Name="ObsTestResult" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" FontSize="12"/>

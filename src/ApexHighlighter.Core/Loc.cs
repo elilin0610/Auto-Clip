@@ -131,6 +131,15 @@ public static class Loc
         ["progress.lang"] = [" (language: {0})", "（語言：{0}）", "（言語：{0}）"],
         ["progress.detecting"] = [" (detecting game language)", "（判斷遊戲語言中）", "（ゲームの言語を判定中）"],
         ["progress.merging"] = ["Analyzing audio and grouping fights…", "分析音量、合併交戰…", "音量を解析し、交戦をまとめています…"],
+        ["progress.verifying"] = ["Taking a second look at the fights…", "二次確認候選片段…", "候補の交戦をもう一度確認しています…"],
+        ["note.verified"] = [
+            "Second look: re-read {1} weak prompt(s) in {0} fight(s) ({3} frames); {2} fight(s) dropped because the prompts were not seen again.",
+            "二次確認：重讀 {0} 段交戰裡 {1} 個不夠確定的提示（{3} 張畫面），其中 {2} 段因為提示沒再出現而拿掉。",
+            "再確認：{0} 件の交戦で不確かな表示 {1} 件を読み直しました（{3} フレーム）。表示が再び見つからなかった {2} 件を外しました。"],
+        ["note.verifyFailed"] = [
+            "Second look at {0} failed, keeping the first result: {1}",
+            "{0} 的二次確認失敗，保留原本的判斷：{1}",
+            "{0} の再確認に失敗したため、最初の判定を使います：{1}"],
 
         ["start.audio"] = ["lead-in {0:0} s, from audio", "依音量往前抓 {0:0} 秒", "音量から {0:0} 秒前に開始"],
         ["start.fixed"] = ["fixed lead-in {0:0} s", "固定往前 {0:0} 秒", "固定で {0:0} 秒前に開始"],
@@ -139,6 +148,10 @@ public static class Loc
             "分數 {0:0.0} 低於門檻 {1:0.0}（只有{2}，不夠確定是精華）",
             "スコア {0:0.0} がしきい値 {1:0.0} 未満（{2} のみで、ハイライトとは言い切れません）"],
         ["reject.assistOnly"] = ["Assists only ({0}); a teammate got the kills", "只有助攻（{0}），主攻是隊友", "アシストのみ（{0}）。キルは味方によるもの"],
+        ["reject.unconfirmed"] = [
+            "Second look failed: only {0} of {1} prompts were seen again, score {2:0.0} is below {3:0.0}",
+            "二次確認沒過：{1} 個提示只有 {0} 個重讀時再出現，分數 {2:0.0} 低於 {3:0.0}",
+            "再確認で不合格：{1} 件中 {0} 件しか再び見つからず、スコア {2:0.0} が {3:0.0} 未満"],
         ["reject.notTop"] = ["Score {0:0.0}, outside the top {1}", "分數 {0:0.0}，排在前 {1} 名之外", "スコア {0:0.0}、上位 {1} 件に入りません"],
         ["position"] = [
             "Knock / elimination prompts were mostly at {0:P0} across and {1:P0} down the screen (measured from this recording, not a preset)",
@@ -258,6 +271,8 @@ public static class Loc
             "以 {0} 為中心，前後各 15 秒，請再微調",
             "{0} を中心に前後 15 秒。必要に応じて微調整してください"],
         ["clip.detail"] = ["Score {0:0.0} | {1} | {2}", "分數 {0:0.0}｜{1}｜{2}", "スコア {0:0.0}｜{1}｜{2}"],
+        ["clip.noEventsInRange"] = ["No prompts inside this range", "這個範圍內沒有觸發提示", "この範囲内にはプロンプトがありません"],
+        ["clip.outsideRange"] = ["{0} outside the clip", "另有 {0} 個在範圍外", "範囲外に {0} 件"],
         ["clip.auto"] = ["Auto-detected", "自動偵測", "自動検出"],
         ["clip.manualSrc"] = ["Manual", "手動", "手動"],
         ["clip.length"] = ["{0:0} s", "{0:0} 秒", "{0:0} 秒"],
@@ -288,6 +303,19 @@ public static class Loc
         ["dlg.folderTitle"] = ["Choose the output folder", "選擇輸出資料夾", "出力フォルダーを選択"],
 
         ["log.ffmpeg"] = ["FFmpeg: {0}", "FFmpeg：{0}", "FFmpeg：{0}"],
+        ["log.ffmpegFound"] = ["FFmpeg {1}: {0} (found via {2})", "FFmpeg {1}：{0}（來源：{2}）", "FFmpeg {1}：{0}（検出元：{2}）"],
+        ["log.ffmpegTooOld"] = [
+            "This FFmpeg is older than {0}. Please update it (winget upgrade Gyan.FFmpeg): old versions have known security bugs when reading video files.",
+            "這個 FFmpeg 比 {0} 舊，請更新（winget upgrade Gyan.FFmpeg）：舊版在讀取影片時有已知的安全漏洞。",
+            "この FFmpeg は {0} より古いです。更新してください（winget upgrade Gyan.FFmpeg）。古い版には動画を読むときの既知の脆弱性があります。"],
+        ["log.ffmpegVersionUnknown"] = [
+            "Could not read the FFmpeg version; make sure it is an up-to-date official build.",
+            "看不出 FFmpeg 的版本，請確認是最新的正式版。",
+            "FFmpeg のバージョンを確認できません。最新の正式版か確認してください。"],
+        ["ffmpeg.source.EnvVar"] = ["APEXHL_FFMPEG_DIR", "APEXHL_FFMPEG_DIR", "APEXHL_FFMPEG_DIR"],
+        ["ffmpeg.source.AppFolder"] = ["app folder", "程式資料夾", "アプリのフォルダー"],
+        ["ffmpeg.source.Path"] = ["PATH", "PATH", "PATH"],
+        ["ffmpeg.source.WinGet"] = ["winget", "winget", "winget"],
         ["log.ocrLangs"] = ["OCR languages (built into Windows): {0}", "OCR 語言（Windows 內建）：{0}", "OCR 言語（Windows 標準）：{0}"],
         ["log.ocrUnknown"] = ["(unavailable)", "（無法取得）", "（取得できません）"],
         ["log.keywordsFail"] = ["Cannot read keywords.json: {0}", "讀不到 keywords.json：{0}", "keywords.json を読み込めません：{0}"],
@@ -351,12 +379,35 @@ public static class Loc
         ["obs.testing"] = ["Connecting…", "連線中…", "接続中…"],
         ["obs.ok"] = ["Connected to OBS {0}", "已連上 OBS {0}", "OBS {0} に接続しました"],
         ["obs.fail"] = ["Could not connect: {0}", "連不上：{0}", "接続できません：{0}"],
-        ["obs.authFail"] = ["Wrong password", "密碼錯誤", "パスワードが違います"],
+        ["obs.authFail"] = [
+            "Wrong password. Copy it again from OBS → Tools → WebSocket Server Settings → Show Connect Info.",
+            "密碼錯誤。請到 OBS 的 Tools → WebSocket Server Settings → Show Connect Info 重新複製密碼。",
+            "パスワードが違います。OBS の Tools → WebSocket Server Settings → Show Connect Info からコピーし直してください。"],
+        ["obs.notReachable"] = [
+            "Can't reach OBS at {0}:{1}. Open OBS first, then check Tools → WebSocket Server Settings → Enable WebSocket server (and that the port matches).",
+            "連不上 {0}:{1} 的 OBS。請先開啟 OBS，並確認 Tools → WebSocket Server Settings 裡已勾選 Enable WebSocket server（連接埠也要一致）。",
+            "{0}:{1} の OBS に接続できません。先に OBS を起動し、Tools → WebSocket Server Settings で Enable WebSocket server がオンか（ポートが一致しているか）確認してください。"],
+        ["obs.notObs"] = [
+            "Something answered on {0}:{1}, but it isn't the OBS WebSocket server. Check the port in OBS → Tools → WebSocket Server Settings.",
+            "{0}:{1} 有程式回應，但不是 OBS 的 WebSocket 伺服器。請到 OBS 的 Tools → WebSocket Server Settings 確認連接埠。",
+            "{0}:{1} で応答がありましたが、OBS の WebSocket サーバーではありません。OBS の Tools → WebSocket Server Settings でポートを確認してください。"],
+        ["obs.needPassword"] = [
+            "OBS asks for a password. Copy it from OBS → Tools → WebSocket Server Settings → Show Connect Info.",
+            "OBS 需要密碼。請到 OBS 的 Tools → WebSocket Server Settings → Show Connect Info 複製密碼貼上。",
+            "OBS がパスワードを求めています。OBS の Tools → WebSocket Server Settings → Show Connect Info からコピーしてください。"],
         ["obs.state.Connecting"] = ["OBS: connecting…", "OBS：連線中…", "OBS：接続中…"],
         ["obs.state.Connected"] = ["OBS: connected", "OBS：已連線", "OBS：接続済み"],
         ["obs.state.Disconnected"] = ["OBS: not connected (retrying)", "OBS：未連線（自動重試）", "OBS：未接続（再試行中）"],
         ["obs.state.AuthFailed"] = ["OBS: wrong password", "OBS：密碼錯誤", "OBS：パスワードが違います"],
         ["obs.state.Off"] = ["OBS: off", "OBS：關閉", "OBS：オフ"],
+        ["obs.remoteWarning"] = [
+            "This is not this PC. The OBS connection is not encrypted, so only use another computer on a network you trust.",
+            "這不是本機。OBS 的連線沒有加密，只有在信任的網路上才連到其他電腦。",
+            "このPCではありません。OBS との接続は暗号化されないので、信頼できるネットワーク上の PC にだけ接続してください。"],
+        ["log.obsRejected"] = [
+            "Ignored a recording path from OBS that is not a local video file: {0}",
+            "OBS 傳來的路徑不是本機的影片檔，已忽略：{0}",
+            "OBS から届いたパスがローカルの動画ファイルではないため無視しました：{0}"],
         ["log.obsRecording"] = [
             "OBS finished recording: {0}. Importing and scanning…",
             "OBS 錄影結束：{0}，自動匯入並掃描…",
@@ -389,5 +440,47 @@ public static class Loc
             "スキャン中…これまでに {0} 件の表示を読み取りました。タイムラインの黄色い目盛りが位置です。スキャン中でもクリックして確認できます。"],
         ["tl.dragStart"] = ["Drag to move the start", "拖曳調整起點", "ドラッグで開始位置を調整"],
         ["tl.dragEnd"] = ["Drag to move the end", "拖曳調整終點", "ドラッグで終了位置を調整"],
+        // ── Scan cache / queue / batch export / new options ──
+        ["log.cacheLoaded"] = [
+            "Loaded the previous scan of this recording ({0}), no rescan needed. Press \"Find highlights\" to scan it again.",
+            "已讀回這支錄影上次的掃描結果（{0}），不用重掃。想重掃請按「掃描精華」。",
+            "この録画の前回のスキャン結果（{0}）を読み込みました。再スキャンは不要です。やり直すには「ハイライトを探す」を押してください。"],
+        ["log.queued"] = ["Queued: {0} ({1} waiting).", "已排入佇列：{0}（共 {1} 支等待中）。", "キューに追加：{0}（待機中 {1} 本）。"],
+        ["log.batch"] = [
+            "{0} recordings will be scanned one after another. Open any of them later to see its results right away.",
+            "{0} 支錄影會依序掃描。之後打開任一支，就會直接顯示它的結果。",
+            "{0} 本の録画を順番にスキャンします。あとでどれを開いても結果がすぐ表示されます。"],
+        ["log.exportOneFailed"] = ["Clip #{0} failed, continuing with the rest: {1}", "片段 #{0} 匯出失敗，繼續匯出其他片段：{1}", "クリップ #{0} の書き出しに失敗しました。残りを続けます：{1}"],
+        ["st.exportPartial"] = [
+            "Exported {0} of {1} clips; {2} failed (see the log).",
+            "已匯出 {1} 段中的 {0} 段，{2} 段失敗（請看下方記錄）。",
+            "{1} 本中 {0} 本を書き出しました。{2} 本は失敗しました（ログを確認してください）。"],
+        ["rep.region"] = [
+            "{0} of {1} frames were read only around the prompt area (faster); the rest were read whole.",
+            "{1} 張畫面中有 {0} 張只讀提示附近的區域（比較快），其餘整張讀。",
+            "{1} フレーム中 {0} フレームは表示付近の領域だけを読み取りました（高速）。残りは全体を読み取りました。"],
+        ["exp.mix"] = ["Mix all audio tracks", "混合所有音軌", "すべての音声トラックをミックス"],
+        ["exp.mixTip"] = [
+            "For OBS recordings with game sound and microphone on separate tracks: puts them all in the clip.",
+            "OBS 把遊戲聲和麥克風錄在不同音軌時，勾這個就會全部混進片段裡。",
+            "OBS でゲーム音とマイクを別トラックに録音している場合、すべてをクリップに入れます。"],
+        ["exp.loudnorm"] = ["Even out loudness (−14 LUFS)", "音量標準化（−14 LUFS）", "音量を均一化（−14 LUFS）"],
+        ["exp.loudnormTip"] = [
+            "Brings the clip to the loudness YouTube plays at, so it is not much quieter or louder than other videos.",
+            "把片段調到 YouTube 播放時的標準音量，不會比別的影片小聲或大聲很多。",
+            "YouTube の再生基準の音量に合わせ、他の動画より極端に小さく・大きくならないようにします。"],
+        ["exp.previewTrack"] = [
+            "Preview plays the file's default audio track; the export uses the track chosen here.",
+            "預覽只會播檔案的預設音軌；匯出用的是這裡選的音軌。",
+            "プレビューはファイルの既定の音声トラックを再生します。書き出しにはここで選んだトラックを使います。"],
+        ["dir.default"] = ["Apex highlights", "Apex精華", "Apexハイライト"],
+        ["set.scan"] = ["Highlights", "精華挑選", "ハイライトの選び方"],
+        ["set.maxClips"] = ["Clips per recording (max)", "每支錄影最多幾段", "録画ごとの最大クリップ数"],
+        ["set.minScore"] = ["Minimum score", "最低分數", "最低スコア"],
+        ["set.maxLen"] = ["Longest clip (s, 0 = no limit)", "片段最長秒數（0 = 不限）", "クリップの最大長（秒、0 = 無制限）"],
+        ["set.scanNote"] = [
+            "Score: knock 1, elimination 1.5, squad wipe 2.5, kill leader 1, champion 4, assist 0.5. Longer streams can use more clips. A fight longer than the limit is split at its longest pause. Applies from the next scan.",
+            "分數：擊倒 1、淘汰 1.5、全隊淘汰 2.5、擊殺王 1、冠軍 4、助攻 0.5。長時間直播可以把段數調高。超過最長秒數的交戰會從中間最長的空檔切開。下次掃描生效。",
+            "スコア：ダウン 1、キル 1.5、部隊全滅 2.5、キルリーダー 1、チャンピオン 4、アシスト 0.5。長時間の配信ではクリップ数を増やせます。最大長を超える交戦は最も長い間で分割します。次回のスキャンから反映されます。"],
     };
 }
