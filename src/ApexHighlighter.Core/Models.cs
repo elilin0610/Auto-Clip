@@ -74,6 +74,10 @@ public sealed class Candidate
         _ => null,
     };
 
+    /// <summary>Events whose prompt appeared inside [start, end], e.g. after the user trimmed the clip.</summary>
+    public List<GameEvent> EventsWithin(double start, double end) =>
+        Events.Where(e => e.Time >= start - 0.05 && e.Time <= end + 0.05).ToList();
+
     /// <summary>"Knock ×2, Elimination" in the current language.</summary>
     public static string DescribeEvents(IEnumerable<GameEvent> events) =>
         string.Join(Loc.T("list.sep"), events.GroupBy(e => e.Kind).OrderBy(k => k.Key)

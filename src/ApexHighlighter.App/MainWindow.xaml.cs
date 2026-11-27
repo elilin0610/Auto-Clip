@@ -67,6 +67,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        DarkTitleBar.Attach(this);
         ClipList.ItemsSource = _clips;
         _clips.CollectionChanged += (_, e) =>
         {

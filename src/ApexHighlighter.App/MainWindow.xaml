@@ -197,7 +197,7 @@
             <Border Grid.Column="2" Background="{StaticResource Panel}" CornerRadius="6" BorderBrush="{StaticResource Line}" BorderThickness="1">
                 <DockPanel Margin="10">
                     <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-                        <Grid Height="18" x:Name="MarkerHost" Margin="5,0">
+                        <Grid Height="18" x:Name="MarkerHost" Margin="6,0">
                             <Canvas x:Name="Markers" ClipToBounds="True" Background="#22262E"
                                     MouseLeftButtonDown="Markers_MouseDown" MouseMove="Markers_MouseMove" MouseLeftButtonUp="Markers_MouseUp"/>
                         </Grid>
