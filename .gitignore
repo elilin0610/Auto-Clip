@@ -20,3 +20,9 @@ harness/out/
 harness/out-gate.log
 harness/.loop-state.json
 harness/golden.local.json
+
+# Claude Code 本機設定（loop 關卡在這裡啟用）/ local Claude Code settings (the loop gate is enabled here)
+.claude/settings.local.json
+
+# 打包輸出 / packaging output (scripts/package.ps1)
+/out/

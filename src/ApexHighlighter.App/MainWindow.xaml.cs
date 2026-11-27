@@ -91,8 +91,8 @@ public partial class MainWindow : Window
         try { _cfg = KeywordConfig.Load(); }
         catch (Exception ex) { Log(Loc.F("log.keywordsFail", ex.Message)); }
 
-        if (FFmpegLocator.TryFind(out var dir)) Log(Loc.F("log.ffmpeg", dir));
-        else Log(Loc.T("err.ffmpegMissing"));
+        // 記下 FFmpeg 從哪裡找到、什麼版本；太舊會提醒更新
+        _ = LogFFmpegAsync();
         Log(Loc.F("log.ocrLangs", string.Join(Loc.T("list.sep"), SafeOcrLanguages())));
         SizeChanged += (_, _) => DrawMarkers();
 
@@ -213,6 +213,7 @@ public partial class MainWindow : Window
             if (state is ObsState.Connected or ObsState.AuthFailed) Log(Loc.T("obs.state." + state));
         });
         w.RecordingStopped += path => Dispatcher.BeginInvoke(async () => { if (_obs == w) await OnObsRecordingStoppedAsync(path); });
+        w.RecordingRejected += path => Dispatcher.BeginInvoke(() => { if (_obs == w) Log(Loc.F("log.obsRejected", path)); });
         ObsText.Visibility = Visibility.Visible;
         UpdateObsText();
         w.Start();
@@ -239,6 +240,12 @@ public partial class MainWindow : Window
     }
 
     /// <summary>OBS finished a recording: queue it, and start on it right away if nothing else is running.</summary>
+    private async Task LogFFmpegAsync()
+    {
+        try { Log(await FFmpegLocator.DescribeAsync()); }
+        catch (Exception ex) { Log(Loc.F("log.ffmpeg", ex.Message)); }
+    }
+
     private async Task OnObsRecordingStoppedAsync(string path)
     {
         await Task.Delay(1500);   // Give OBS a moment to finish writing the file.

@@ -4,32 +4,60 @@
 
 After your stream ends, drop in your Apex recording and the app finds up to 3 fights worth posting to YouTube. You can play them, fine-tune the start and end, skip the ones you don't want, then export them as 16:9 MP4s. The original recording is only read, never modified.
 
+## Install (for most people)
+
+1. Download `ApexHighlighter-<version>-setup.exe` from the [Releases](https://github.com/elilin0610/Auto-Clip/releases) page.
+2. Run it. By default it installs for your user only (`%LOCALAPPDATA%\Programs\Apex Highlight Picker`), so no admin rights are needed. The first page lets you choose "Install for all users" instead, which asks for admin.
+3. Type "Apex Highlight Picker" in Windows Search (Start menu) to open it. Each Windows user who installs it gets the Start menu entry automatically; nobody has to run a script.
+4. To uninstall: Settings > Apps > Installed apps > Apex Highlight Picker > Uninstall.
+
+The installer includes the .NET runtime, so you don't need to install .NET. You still need FFmpeg (see Requirements). Your settings stay in your user folder after uninstalling.
+
+**Smart App Control:** releases are not signed yet. On a PC where Smart App Control (SAC) is on, Windows refuses to run the app and shows "Application Control policy has blocked this file", even after it is installed. The setup exe itself may also get a SmartScreen warning ("Windows protected your PC"). Until the app is signed, people with SAC on can only use the CLI, or turn SAC off, which is effectively permanent. Details are under [Running](#running) below. PCs where SAC is off (or was never on, which is common on PCs upgraded from older Windows) only see the SmartScreen warning: click More info > Run anyway.
+
 ## Requirements
 
-- Windows 10/11, .NET 11 SDK
-- FFmpeg: `winget install Gyan.FFmpeg`. The app looks on PATH and in winget's install location automatically. You can also put `ffmpeg.exe` and `ffprobe.exe` in an `ffmpeg\` subfolder next to the app.
+- Windows 10/11 (64-bit). To build from source: .NET 11 SDK
+- FFmpeg: `winget install Gyan.FFmpeg`. The app looks on PATH and in winget's install location automatically. You can also put `ffmpeg.exe` and `ffprobe.exe` in an `ffmpeg\` subfolder next to the app, or point `APEXHL_FFMPEG_DIR` at a folder. Only absolute folders are searched (relative PATH entries such as `.` are skipped), and in winget's folder only the `Gyan.FFmpeg` and `BtbN.FFmpeg` packages. The log shows which FFmpeg was found and its version, and warns if it is older than 6.0. FFmpeg reads every recording, so keep it updated (`winget upgrade Gyan.FFmpeg`).
 - Windows built-in OCR: install the language pack for whatever language the game is in (Settings > Time & language > Language). No paid API is needed.
 - Exports use NVENC when you have an NVIDIA GPU, and fall back to x264 otherwise.
 
-## Running
+## Running from source
+
+<a id="running"></a>
 
 ```powershell
 dotnet run --project src\ApexHighlighter.App -c Release
 ```
 
-If Windows shows "Application Control policy has blocked this file", that is Smart App Control blocking a new unsigned program. You can:
+If Windows shows "Application Control policy has blocked this file", that is Smart App Control (SAC) blocking an unsigned program. **Keep SAC on if you can.** Turning it off removes that protection for every program on the PC, and on many Windows versions it can only be turned back on by resetting Windows.
 
-- turn it off under Windows Security > App & browser control > Smart App Control, or
-- use the CLI for now.
+Tested on 2026-11-27 with SAC on (`VerifiedAndReputablePolicyState = 1`):
 
-To find the app in Windows Search (Start menu), build the Release version once and create a shortcut:
+| How it is started | Result |
+|---|---|
+| `ApexHighlighter.App.exe` | Blocked |
+| `dotnet ApexHighlighter.App.dll` | Also blocked: SAC checks the DLL that `dotnet.exe` loads (CodeIntegrity events 3033/3077/3118) |
+| CLI, `dotnet apexhl.dll` (also what `harness\verify.ps1` uses) | Works: scan and export passed |
+
+So with SAC on:
+
+- Use the CLI below for scanning and exporting; it works today.
+- To use the window, the app has to be signed with a certificate from a trusted CA. See [docs/SIGNING.md](docs/SIGNING.md) (an OV certificate is the option available in Taiwan). A self-signed certificate does not satisfy SAC.
+- Turning SAC off (Settings > Privacy & security > Windows Security > App & browser control > Smart App Control settings) also works, but think of it as permanent.
+
+Releases come with a `SHA256SUMS.txt` file so people can check the download.
+
+Security notes: [docs/SECURITY.md](docs/SECURITY.md).
+
+If you build from source instead of using the installer, you can still add it to Windows Search (Start menu): build the Release version once and create a shortcut:
 
 ```powershell
 dotnet build src\ApexHighlighter.App -c Release
 powershell -NoProfile -File scripts\install-shortcut.ps1
 ```
 
-This adds "Apex Highlight Picker" to your Start menu (current user only, no admin needed). Run it again after the build location changes; add `-UseDotnet` if Smart App Control blocks the exe, or `-Remove` to delete it. If PowerShell says running scripts is disabled, allow local scripts once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+This adds "Apex Highlight Picker" to your Start menu for the current Windows user only, so every other user would have to run it too; the installer above does not have that limitation. If you later run the installer, it replaces this shortcut. Run it again after the build location changes; add `-UseDotnet` if Smart App Control blocks the exe, or `-Remove` to delete it. If PowerShell says running scripts is disabled, allow local scripts once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 
 CLI (same core as the UI):
 
@@ -81,6 +109,8 @@ Settings → "OBS": tick "When OBS stops recording, import and scan the recordin
 - As soon as recording stops, the app imports that file and starts scanning. If it is busy, the recording is queued, so several recordings in a row are never lost.
 - The app only listens for OBS notifications and never changes any OBS settings. If OBS isn't running it retries every 10 seconds; it stops retrying if the password is wrong.
 - The password is encrypted with Windows DPAPI before being saved in `settings.json`, so only your Windows account can decrypt it. It is never stored in plain text.
+- The OBS WebSocket connection is not encrypted. Keep the address on `localhost` (OBS on this PC). The settings window shows a warning if you enter another computer.
+- The app only opens a path from OBS if it is an existing video file on a local drive (for example `D:\Videos\...mkv`). URLs, network shares (`\\server\share`) and other file types are ignored and noted in the log.
 
 ## Interface language
 
@@ -120,7 +150,11 @@ src/ApexHighlighter.Core   detection, FFmpeg, export (shared by UI and CLI)
 src/ApexHighlighter.App    WPF interface
 src/ApexHighlighter.Cli    command line: scan, export, batch, OCR test, A/V sync check
 tests/ApexHighlighter.Tests unit tests (keyword rules, clustering, second look, pipeline, export arguments, cache, queue…)
-harness/                   end-to-end verify script and Claude's fix loop
+harness/                   end-to-end verify script and Claude's fix loop (opt-in: enable-gate.ps1)
+scripts/package.ps1        release zips, installer, optional signing, SHA256SUMS.txt
+installer/                 Inno Setup script for the setup exe (Start menu entry, uninstall)
+.github/workflows/         release workflow (vulnerability check, tests, signing, checksums)
+docs/                      SECURITY.md, SIGNING.md, screenshots
 acceptance/                acceptance notes and scan reports
 ```
 

@@ -14,8 +14,8 @@ The checks form a dependency graph; steps whose dependencies are done run in par
             └── scan:<case>  ── export:<case>   …（每支測試錄影一條 / one chain per sample）
 
 用法 / Usage (Windows PowerShell 5.1 or pwsh 7):
-    powershell -NoProfile -ExecutionPolicy Bypass -File harness\verify.ps1
-    powershell -NoProfile -ExecutionPolicy Bypass -File harness\verify.ps1 -Quick
+    powershell -NoProfile -ExecutionPolicy RemoteSigned -File harness\verify.ps1
+    powershell -NoProfile -ExecutionPolicy RemoteSigned -File harness\verify.ps1 -Quick
     ... -Golden harness\golden.local.json -MaxParallel 2 -KeepClips
 
 結束代碼 / Exit code: 0 = 全部通過（略過的步驟不算失敗）/ all passed (skipped steps are not failures)
