@@ -45,6 +45,8 @@ public sealed class ObsWatcher : IAsyncDisposable
     public event Action<ObsState>? StateChanged;
     /// <summary>Raised on a thread-pool thread with the finished recording's full path.</summary>
     public event Action<string>? RecordingStopped;
+    /// <summary>Raised when OBS reports a path that is not an existing local video file (see <see cref="IsAcceptableRecordingPath"/>).</summary>
+    public event Action<string>? RecordingRejected;
 
     public ObsWatcher(string host, int port, string? password)
     {
@@ -70,7 +72,12 @@ public sealed class ObsWatcher : IAsyncDisposable
                 {
                     var msg = await ReceiveAsync(ws, ct);
                     if (msg == null) break;
-                    if (RecordingPathFromEvent(msg) is { } path) RecordingStopped?.Invoke(path);
+                    if (RecordingPathFromEvent(msg) is { } path)
+                    {
+                        // 只接受本機上真的存在的影片檔，不讓假冒的 OBS 叫我們去讀任意檔案或網址
+                        if (IsAcceptableRecordingPath(path)) RecordingStopped?.Invoke(path);
+                        else RecordingRejected?.Invoke(path);
+                    }
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
@@ -196,6 +203,31 @@ public sealed class ObsWatcher : IAsyncDisposable
             await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, t.Token);
         }
         catch { }
+    }
+
+    /// <summary>Video extensions OBS can record to.</summary>
+    internal static readonly string[] RecordingExtensions = [".mkv", ".mp4", ".mov", ".flv", ".ts", ".m4v", ".fmp4", ".webm"];
+
+    /// <summary>
+    /// True when a path from OBS is safe to open: an absolute local path (drive letter, not a URL, device path or
+    /// network share), with a video extension, that exists. Anything else could make FFmpeg read an arbitrary file or URL.
+    /// </summary>
+    public static bool IsAcceptableRecordingPath(string? path, Func<string, bool>? exists = null)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path.Contains('\0')) return false;
+        // Drive-letter paths only: C:\... — rules out http://, file://, \\server\share and \\?\ device paths.
+        if (path.Length < 4 || !char.IsAsciiLetter(path[0]) || path[1] != ':' || (path[2] != '\\' && path[2] != '/')) return false;
+        if (path.Contains("://", StringComparison.Ordinal)) return false;
+        if (!RecordingExtensions.Any(e => path.EndsWith(e, StringComparison.OrdinalIgnoreCase))) return false;
+        return exists != null ? exists(path) : File.Exists(path);
+    }
+
+    /// <summary>True for this PC (localhost, 127.x.x.x, ::1). Anything else goes over the network without encryption.</summary>
+    public static bool IsLoopbackHost(string? host)
+    {
+        var h = (host ?? "").Trim().Trim('[', ']');
+        if (h.Length == 0 || h.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return true;
+        return System.Net.IPAddress.TryParse(h, out var ip) && System.Net.IPAddress.IsLoopback(ip);
     }
 
     public async ValueTask DisposeAsync()

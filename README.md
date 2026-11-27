@@ -7,7 +7,7 @@ After your stream ends, drop in your Apex recording and the app finds up to 3 fi
 ## Requirements
 
 - Windows 10/11, .NET 11 SDK
-- FFmpeg: `winget install Gyan.FFmpeg`. The app looks on PATH and in winget's install location automatically. You can also put `ffmpeg.exe` and `ffprobe.exe` in an `ffmpeg\` subfolder next to the app.
+- FFmpeg: `winget install Gyan.FFmpeg`. The app looks on PATH and in winget's install location automatically. You can also put `ffmpeg.exe` and `ffprobe.exe` in an `ffmpeg\` subfolder next to the app, or point `APEXHL_FFMPEG_DIR` at a folder. Only absolute folders are searched (relative PATH entries such as `.` are skipped), and in winget's folder only the `Gyan.FFmpeg` and `BtbN.FFmpeg` packages. The log shows which FFmpeg was found and its version, and warns if it is older than 6.0. FFmpeg reads every recording, so keep it updated (`winget upgrade Gyan.FFmpeg`).
 - Windows built-in OCR: install the language pack for whatever language the game is in (Settings > Time & language > Language). No paid API is needed.
 - Exports use NVENC when you have an NVIDIA GPU, and fall back to x264 otherwise.
 
@@ -17,10 +17,18 @@ After your stream ends, drop in your Apex recording and the app finds up to 3 fi
 dotnet run --project src\ApexHighlighter.App -c Release
 ```
 
-If Windows shows "Application Control policy has blocked this file", that is Smart App Control blocking a new unsigned program. You can:
+If Windows shows "Application Control policy has blocked this file", that is Smart App Control (SAC) blocking a new unsigned program. **Keep SAC on.** Turning it off removes that protection for every program on the PC, and on many Windows versions it can only be turned back on by resetting Windows. Instead:
 
-- turn it off under Windows Security > App & browser control > Smart App Control, or
-- use the CLI for now.
+- Start the app through `dotnet`, which is signed by Microsoft, instead of the unsigned `ApexHighlighter.App.exe`:
+  ```powershell
+  dotnet build src\ApexHighlighter.App -c Release
+  dotnet src\ApexHighlighter.App\bin\Release\net11.0-windows10.0.19041.0\ApexHighlighter.App.dll
+  ```
+  The CLI and the harness already run this way (`dotnet apexhl.dll`) with SAC on.
+- Or use the CLI below.
+- For builds other people download, sign the release. See [docs/SIGNING.md](docs/SIGNING.md). Signed releases also come with a `SHA256SUMS.txt` file so people can check the download.
+
+Security notes: [docs/SECURITY.md](docs/SECURITY.md).
 
 CLI (same core as the UI):
 
@@ -72,6 +80,8 @@ Settings → "OBS": tick "When OBS stops recording, import and scan the recordin
 - As soon as recording stops, the app imports that file and starts scanning. If it is busy, the recording is queued, so several recordings in a row are never lost.
 - The app only listens for OBS notifications and never changes any OBS settings. If OBS isn't running it retries every 10 seconds; it stops retrying if the password is wrong.
 - The password is encrypted with Windows DPAPI before being saved in `settings.json`, so only your Windows account can decrypt it. It is never stored in plain text.
+- The OBS WebSocket connection is not encrypted. Keep the address on `localhost` (OBS on this PC). The settings window shows a warning if you enter another computer.
+- The app only opens a path from OBS if it is an existing video file on a local drive (for example `D:\Videos\...mkv`). URLs, network shares (`\\server\share`) and other file types are ignored and noted in the log.
 
 ## Interface language
 
@@ -111,7 +121,10 @@ src/ApexHighlighter.Core   detection, FFmpeg, export (shared by UI and CLI)
 src/ApexHighlighter.App    WPF interface
 src/ApexHighlighter.Cli    command line: scan, export, batch, OCR test, A/V sync check
 tests/ApexHighlighter.Tests unit tests (keyword rules, clustering, second look, pipeline, export arguments, cache, queue…)
-harness/                   end-to-end verify script and Claude's fix loop
+harness/                   end-to-end verify script and Claude's fix loop (opt-in: enable-gate.ps1)
+scripts/package.ps1        release zips, optional signing, SHA256SUMS.txt
+.github/workflows/         release workflow (vulnerability check, tests, signing, checksums)
+docs/                      SECURITY.md, SIGNING.md, screenshots
 acceptance/                acceptance notes and scan reports
 ```
 

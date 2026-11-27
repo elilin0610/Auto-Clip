@@ -301,6 +301,19 @@ public static class Loc
         ["dlg.folderTitle"] = ["Choose the output folder", "選擇輸出資料夾", "出力フォルダーを選択"],
 
         ["log.ffmpeg"] = ["FFmpeg: {0}", "FFmpeg：{0}", "FFmpeg：{0}"],
+        ["log.ffmpegFound"] = ["FFmpeg {1}: {0} (found via {2})", "FFmpeg {1}：{0}（來源：{2}）", "FFmpeg {1}：{0}（検出元：{2}）"],
+        ["log.ffmpegTooOld"] = [
+            "This FFmpeg is older than {0}. Please update it (winget upgrade Gyan.FFmpeg): old versions have known security bugs when reading video files.",
+            "這個 FFmpeg 比 {0} 舊，請更新（winget upgrade Gyan.FFmpeg）：舊版在讀取影片時有已知的安全漏洞。",
+            "この FFmpeg は {0} より古いです。更新してください（winget upgrade Gyan.FFmpeg）。古い版には動画を読むときの既知の脆弱性があります。"],
+        ["log.ffmpegVersionUnknown"] = [
+            "Could not read the FFmpeg version; make sure it is an up-to-date official build.",
+            "看不出 FFmpeg 的版本，請確認是最新的正式版。",
+            "FFmpeg のバージョンを確認できません。最新の正式版か確認してください。"],
+        ["ffmpeg.source.EnvVar"] = ["APEXHL_FFMPEG_DIR", "APEXHL_FFMPEG_DIR", "APEXHL_FFMPEG_DIR"],
+        ["ffmpeg.source.AppFolder"] = ["app folder", "程式資料夾", "アプリのフォルダー"],
+        ["ffmpeg.source.Path"] = ["PATH", "PATH", "PATH"],
+        ["ffmpeg.source.WinGet"] = ["winget", "winget", "winget"],
         ["log.ocrLangs"] = ["OCR languages (built into Windows): {0}", "OCR 語言（Windows 內建）：{0}", "OCR 言語（Windows 標準）：{0}"],
         ["log.ocrUnknown"] = ["(unavailable)", "（無法取得）", "（取得できません）"],
         ["log.keywordsFail"] = ["Cannot read keywords.json: {0}", "讀不到 keywords.json：{0}", "keywords.json を読み込めません：{0}"],
@@ -370,6 +383,14 @@ public static class Loc
         ["obs.state.Disconnected"] = ["OBS: not connected (retrying)", "OBS：未連線（自動重試）", "OBS：未接続（再試行中）"],
         ["obs.state.AuthFailed"] = ["OBS: wrong password", "OBS：密碼錯誤", "OBS：パスワードが違います"],
         ["obs.state.Off"] = ["OBS: off", "OBS：關閉", "OBS：オフ"],
+        ["obs.remoteWarning"] = [
+            "This is not this PC. The OBS connection is not encrypted, so only use another computer on a network you trust.",
+            "這不是本機。OBS 的連線沒有加密，只有在信任的網路上才連到其他電腦。",
+            "このPCではありません。OBS との接続は暗号化されないので、信頼できるネットワーク上の PC にだけ接続してください。"],
+        ["log.obsRejected"] = [
+            "Ignored a recording path from OBS that is not a local video file: {0}",
+            "OBS 傳來的路徑不是本機的影片檔，已忽略：{0}",
+            "OBS から届いたパスがローカルの動画ファイルではないため無視しました：{0}"],
         ["log.obsRecording"] = [
             "OBS finished recording: {0}. Importing and scanning…",
             "OBS 錄影結束：{0}，自動匯入並掃描…",

@@ -23,6 +23,7 @@ public partial class SettingsWindow : Window
         var s = App.Settings;
         ObsEnabledBox.IsChecked = s.ObsEnabled;
         ObsHostBox.Text = s.ObsHost;
+        ObsHostBox_TextChanged(ObsHostBox, null);
         ObsPortBox.Text = s.ObsPort.ToString();
         ObsPasswordBox.Password = s.GetObsPassword() ?? "";
         var inv = System.Globalization.CultureInfo.InvariantCulture;
@@ -39,6 +40,10 @@ public partial class SettingsWindow : Window
         App.Settings.UiLanguage = lang.Code;
         App.Settings.Save();
     }
+
+    // 位址不是本機（localhost / 127.0.0.1 / ::1）就顯示「連線沒有加密」的提醒
+    private void ObsHostBox_TextChanged(object sender, TextChangedEventArgs? e) =>
+        ObsHostWarning.Visibility = ObsWatcher.IsLoopbackHost(ObsHostBox.Text) ? Visibility.Collapsed : Visibility.Visible;
 
     private (string Host, int Port) ObsTarget() =>
         (string.IsNullOrWhiteSpace(ObsHostBox.Text) ? "localhost" : ObsHostBox.Text.Trim(),

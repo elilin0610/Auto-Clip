@@ -1,0 +1,145 @@
+# 發佈流程 / Release workflow
+#
+# 推 v* 標籤（例如 v0.3.0）或手動執行時：檢查相依套件弱點 → 單元測試 → publish →（有設定就）簽章 → 壓縮 → SHA256SUMS.txt。
+# On a v* tag (for example v0.3.0) or a manual run: dependency vulnerability check → unit tests → publish →
+# sign (when configured) → zip → SHA256SUMS.txt.
+#
+# 簽章預設關閉。設定方式見 docs/SIGNING.md / Signing is off until configured; see docs/SIGNING.md:
+#   Repository variable  SIGNING_MODE = artifact-signing
+#   Repository variables ARTIFACT_SIGNING_ENDPOINT, ARTIFACT_SIGNING_ACCOUNT, ARTIFACT_SIGNING_PROFILE
+#   Repository secrets   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID  (OpenID Connect, no client secret)
+# 沒設定時一樣會產出未簽章的 zip 和 SHA256SUMS.txt / Without it you still get unsigned zips and SHA256SUMS.txt.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write    # 建立 GitHub Release / create the GitHub Release (tags only)
+      id-token: write    # Azure OpenID Connect 登入 / Azure OIDC login (signing only)
+    env:
+      SIGNING_MODE: ${{ vars.SIGNING_MODE }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "11.0.x"
+
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}".TrimStart("v") } else { "0.0.0-ci.${{ github.run_number }}" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Restore
+        run: dotnet restore ApexHighlighter.slnx
+
+      # 有已知弱點的 NuGet 套件（包含間接相依）就讓流程失敗
+      # Fail when any NuGet package, direct or transitive, has a known vulnerability.
+      - name: Dependency vulnerability check
+        shell: pwsh
+        run: |
+          $out = dotnet list ApexHighlighter.slnx package --vulnerable --include-transitive 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "dotnet list package failed" }
+          if ($out -match "has the following vulnerable packages") { throw "Vulnerable packages found. 有已知弱點的套件。" }
+
+      - name: Unit tests
+        run: dotnet test tests/ApexHighlighter.Tests -c Release --no-restore -nologo
+
+      - name: Publish
+        shell: pwsh
+        run: ./scripts/package.ps1 -Version "${{ steps.ver.outputs.version }}" -PublishOnly
+
+      # ---- 簽章（Azure Artifact Signing，舊名 Trusted Signing）/ signing (Azure Artifact Signing, formerly Trusted Signing)
+      - name: Collect our own binaries to sign
+        if: env.SIGNING_MODE == 'artifact-signing'
+        shell: pwsh
+        run: |
+          # 只簽本專案的檔案，第三方 DLL 保留原本的簽章 / sign only this project's files; third-party DLLs keep theirs
+          $pub = Resolve-Path out/publish
+          Get-ChildItem $pub -Recurse -Include "ApexHighlighter*.dll","ApexHighlighter*.exe","apexhl.dll","apexhl.exe" | ForEach-Object {
+            $rel = $_.FullName.Substring($pub.Path.Length).TrimStart('\')
+            $dst = Join-Path out/tosign $rel
+            New-Item -ItemType Directory -Force (Split-Path $dst) | Out-Null
+            Copy-Item $_.FullName $dst
+          }
+
+      - name: Azure login (OpenID Connect)
+        if: env.SIGNING_MODE == 'artifact-signing'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # 動作名稱或版本若已更新，請照 docs/SIGNING.md 的連結確認 / if the action was renamed, check the link in docs/SIGNING.md
+      - name: Sign
+        if: env.SIGNING_MODE == 'artifact-signing'
+        uses: azure/trusted-signing-action@v0
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\out\tosign
+          files-folder-filter: dll,exe
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+
+      - name: Put signed files back
+        if: env.SIGNING_MODE == 'artifact-signing'
+        shell: pwsh
+        run: Copy-Item -Recurse -Force out/tosign/* out/publish/
+
+      # ---- 壓縮 + SHA256 / zip + SHA256（簽章後才算 / computed after signing）
+      - name: Pack and checksum
+        shell: pwsh
+        run: |
+          ./scripts/package.ps1 -Version "${{ steps.ver.outputs.version }}" -PackOnly
+          if ($env:SIGNING_MODE -eq 'artifact-signing') {
+            $bad = Get-ChildItem out/publish -Recurse -Include "ApexHighlighter*.dll","ApexHighlighter*.exe","apexhl.dll","apexhl.exe" |
+              Where-Object { (Get-AuthenticodeSignature $_.FullName).Status -ne 'Valid' }
+            if ($bad) { throw "Not signed: $($bad.Name -join ', ')" }
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ApexHighlighter-${{ steps.ver.outputs.version }}
+          path: out/release/*
+
+      - name: GitHub Release (tags only)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/release/*.zip
+            out/release/SHA256SUMS.txt
+          body: |
+            Check your download / 核對下載檔:
+            `Get-FileHash .\ApexHighlighter-${{ steps.ver.outputs.version }}-app.zip -Algorithm SHA256` must match `SHA256SUMS.txt`.
+            Signing / 簽章: ${{ env.SIGNING_MODE == 'artifact-signing' && 'signed with Azure Artifact Signing / 已簽章' || 'unsigned / 未簽章' }}

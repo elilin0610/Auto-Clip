@@ -38,6 +38,17 @@ Loc.Set(Opt("--ui-lang", "zh-Hant"));
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
+// 用到 FFmpeg 的指令先檢查版本：太舊或看不出版本就提醒（不擋）
+if (args[0] is "scan" or "export" or "batch" or "thumb" or "synccheck" or "ocr")
+{
+    try
+    {
+        var v = await FFmpegLocator.GetVersionAsync(cts.Token);
+        if (v != null && (v.TooOld || v.Unknown)) AnsiConsole.MarkupLine($"[yellow]⚠ {Markup.Escape(await FFmpegLocator.DescribeAsync(cts.Token))}[/]");
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException) { /* 找不到 FFmpeg 等錯誤交給各指令自己回報 */ }
+}
+
 try
 {
     return args[0] switch
@@ -302,6 +313,7 @@ async Task<int> ObsWatch()
     // The password comes from an environment variable so it never ends up in shell history.
     var host = Opt("--host", "localhost"); var port = int.Parse(Opt("--port", "4455"));
     var pw = Environment.GetEnvironmentVariable("APEXHL_OBS_PASSWORD");
+    if (!ObsWatcher.IsLoopbackHost(host)) AnsiConsole.MarkupLine($"[yellow]⚠ {Markup.Escape(Loc.T("obs.remoteWarning"))}[/]");
     string version = "";
     try
     {
@@ -330,6 +342,8 @@ async Task<int> ObsWatch()
     };
     w.RecordingStopped += path =>
         AnsiConsole.MarkupLine($"[grey]{DateTime.Now:HH:mm:ss}[/] [{Accent}]■ 錄影結束[/] {PathLink(path)}");
+    w.RecordingRejected += path =>
+        AnsiConsole.MarkupLine($"[grey]{DateTime.Now:HH:mm:ss}[/] [yellow]⚠ {Markup.Escape(Loc.F("log.obsRejected", path))}[/]");
     w.Start();
     try { await Task.Delay(Timeout.Infinite, cts.Token); } catch (OperationCanceledException) { }
     return 0;

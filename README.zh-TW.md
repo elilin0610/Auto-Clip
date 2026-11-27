@@ -7,7 +7,7 @@
 ## 需要
 
 - Windows 10/11、.NET 11 SDK
-- FFmpeg：`winget install Gyan.FFmpeg`。程式會自動找 PATH 和 winget 的安裝位置，也可以把 `ffmpeg.exe`、`ffprobe.exe` 放到程式資料夾的 `ffmpeg\` 子資料夾。
+- FFmpeg：`winget install Gyan.FFmpeg`。程式會自動找 PATH 和 winget 的安裝位置，也可以把 `ffmpeg.exe`、`ffprobe.exe` 放到程式資料夾的 `ffmpeg\` 子資料夾，或用環境變數 `APEXHL_FFMPEG_DIR` 指定資料夾。只會搜尋絕對路徑（PATH 裡 `.` 這類相對路徑會跳過），winget 資料夾只找 `Gyan.FFmpeg` 和 `BtbN.FFmpeg` 兩個套件。log 會顯示找到哪一個 FFmpeg 和它的版本，比 6.0 舊會提醒。FFmpeg 會讀取每一支錄影，請保持更新（`winget upgrade Gyan.FFmpeg`）。
 - Windows 內建 OCR：遊戲是什麼語言，就要裝那個語言包（設定 > 時間與語言 > 語言）。不需要付費 API。
 - 有 NVIDIA 顯卡時用 NVENC 匯出，沒有就自動改用 x264。
 
@@ -17,10 +17,18 @@
 dotnet run --project src\ApexHighlighter.App -c Release
 ```
 
-如果 Windows 跳出「Application Control policy has blocked this file」，那是 Smart App Control 在擋未簽章的新程式。可以：
+如果 Windows 跳出「Application Control policy has blocked this file」，那是 Smart App Control（SAC）在擋未簽章的新程式。**請不要關掉 SAC。**關掉後整台電腦的所有程式都失去這層保護，而且在不少 Windows 版本上要重設 Windows 才能再打開。改用下面的方法：
 
-- 到「Windows 安全性 > 應用程式與瀏覽器控制 > Smart App Control」關掉，或
-- 先用 CLI。
+- 透過微軟簽過章的 `dotnet` 啟動，不要直接執行沒簽章的 `ApexHighlighter.App.exe`：
+  ```powershell
+  dotnet build src\ApexHighlighter.App -c Release
+  dotnet src\ApexHighlighter.App\bin\Release\net11.0-windows10.0.19041.0\ApexHighlighter.App.dll
+  ```
+  CLI 和 harness 已經是這樣跑（`dotnet apexhl.dll`），SAC 開著也能用。
+- 或先用下面的 CLI。
+- 要給別人下載的版本，請替發佈檔簽章，見 [docs/SIGNING.zh-TW.md](docs/SIGNING.zh-TW.md)。發佈時會附上 `SHA256SUMS.txt`，讓下載的人可以核對檔案。
+
+資安說明：[docs/SECURITY.zh-TW.md](docs/SECURITY.zh-TW.md)。
 
 CLI（和介面用同一套核心）：
 
@@ -72,6 +80,8 @@ dotnet test tests\ApexHighlighter.Tests
 - 錄影一停止，程式就自動匯入那個檔案並開始掃描；如果正在忙，會排進佇列，連續停好幾次錄影也不會漏掉。
 - 本程式只聽 OBS 的通知，不會改 OBS 的任何設定。OBS 沒開時會每 10 秒重試；密碼錯誤就停止重試。
 - 密碼用 Windows DPAPI 加密後存在 `settings.json`，只有你的 Windows 帳戶能解開，不會以明碼存檔。
+- OBS WebSocket 連線沒有加密，位址請維持 `localhost`（OBS 在本機）。填其他電腦時，設定視窗會顯示提醒。
+- OBS 傳來的路徑必須是本機磁碟上存在的影片檔（例如 `D:\Videos\...mkv`）才會開啟；網址、網路共用資料夾（`\\server\share`）和其他類型的檔案會被忽略，並記在 log 裡。
 
 ## 介面語言
 
@@ -111,7 +121,10 @@ src/ApexHighlighter.Core   偵測、FFmpeg、匯出（介面和 CLI 共用）
 src/ApexHighlighter.App    WPF 介面
 src/ApexHighlighter.Cli    命令列：掃描、匯出、批次、OCR 測試、音畫同步檢查
 tests/ApexHighlighter.Tests 單元測試（關鍵字規則、分群、二次確認、流水線、匯出參數、快取、佇列…）
-harness/                   一鍵驗證腳本和 Claude 的自動修正流程
+harness/                   一鍵驗證腳本和 Claude 的自動修正流程（自行啟用：enable-gate.ps1）
+scripts/package.ps1        打包發佈 zip、可選簽章、SHA256SUMS.txt
+.github/workflows/         發佈流程（弱點檢查、測試、簽章、雜湊）
+docs/                      SECURITY、SIGNING 說明、截圖
 acceptance/                驗收紀錄與掃描報告
 ```
 
