@@ -146,9 +146,9 @@ public static class Loc
             "畫面上讀不到足夠的提示或 HUD 文字，無法確定遊戲語言；暫用 {0}（命中 {1} 次）。",
             "表示や HUD の文字が少なく、ゲームの言語を判定できません。暫定で {0} を使います（{1} 件）。"],
         ["note.langUnverified"] = [
-            "The keywords for \"{0}\" have not been checked against real recordings yet. Review the results and edit keywords.json if needed.",
-            "「{0}」的關鍵字還沒用實際錄影確認過，結果請多看一眼，必要時修改 keywords.json。",
-            "「{0}」のキーワードはまだ実際の録画で確認していません。結果をよく確認し、必要なら keywords.json を修正してください。"],
+            "The keywords for \"{0}\" have not been checked against real recordings yet. Review the results and edit {1} if needed.",
+            "「{0}」的關鍵字還沒用實際錄影確認過，結果請多看一眼，必要時修改 {1}。",
+            "「{0}」のキーワードはまだ実際の録画で確認していません。結果をよく確認し、必要なら {1} を修正してください。"],
         ["note.audioFailed"] = [
             "Audio analysis failed; using a fixed lead-in instead: {0}",
             "音量分析失敗，片頭改用固定前置秒數：{0}",

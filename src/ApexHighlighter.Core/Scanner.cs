@@ -205,7 +205,7 @@ public sealed class Scanner
         if (!result.LanguageConfident)
             result.Notes.Add(Loc.F("note.langUncertain", winner.Matcher.LanguageId, hitCount[winner.Key]));
         if (!result.LanguageVerified)
-            result.Notes.Add(Loc.F("note.langUnverified", winner.Matcher.LanguageId));
+            result.Notes.Add(Loc.F("note.langUnverified", winner.Matcher.LanguageId, KeywordConfig.FileFor(_cfg.Game)));
         result.RegionFrames = collected.Count(c => c.PairKey == winner.Key && !c.Full);
 
         // 只留下勝出語言的結果，並丟掉觀戰中的畫面
