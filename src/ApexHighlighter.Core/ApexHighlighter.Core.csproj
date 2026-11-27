@@ -10,5 +10,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Update="keywords.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="keywords.minecraft.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

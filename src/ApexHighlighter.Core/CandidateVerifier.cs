@@ -53,11 +53,14 @@ public static class CandidateVerifier
     /// <summary>
     /// Picks the suggested fights with a second look. <paramref name="reread"/> reads the weak prompts of one fight again and
     /// returns what it saw plus how many frames it read, or null if it could not read them.
+    /// <paramref name="alwaysKeep"/> says which events keep a fight whatever its score (default: Champion).
     /// Changes <see cref="Candidate.Reject"/> and <see cref="Candidate.Check"/> in place and returns the list in time order.
     /// </summary>
     public static async Task<List<Candidate>> SelectAsync(List<Candidate> clusters, ScanOptions opt, Func<EventKind, double> weight,
-        Func<Candidate, Task<(IReadOnlyList<PromptHit> Hits, int Frames)?>> reread, CancellationToken ct)
+        Func<Candidate, Task<(IReadOnlyList<PromptHit> Hits, int Frames)?>> reread, CancellationToken ct,
+        Func<EventKind, bool>? alwaysKeep = null)
     {
+        alwaysKeep ??= k => k == EventKind.Champion;
         // Near misses whose score could reach the threshold if their weak prompts are real get a second chance too.
         double Upside(Candidate c) => c.Events.Sum(e => weight(e.Kind));
         var pool = clusters
@@ -98,7 +101,7 @@ public static class CandidateVerifier
 
             var (check, confirmed) = Judge(c, r.Hits, r.Frames, weight, opt);
             c.Check = check;
-            bool champion = confirmed.Any(e => e.Kind == EventKind.Champion);
+            bool champion = confirmed.Any(e => alwaysKeep(e.Kind));
             bool assistOnly = confirmed.Count > 0 && confirmed.All(e => e.Kind == EventKind.Assist);
             if ((check.ScoreAfter >= opt.MinScore || champion) && confirmed.Count > 0 && !assistOnly)
             {

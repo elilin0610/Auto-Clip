@@ -8,7 +8,7 @@ namespace ApexHighlighter.App;
 // =====================================================================================
 // SettingsWindow.xaml.cs — 設定視窗
 //
-// 介面語言（選了立刻生效）、精華挑選（最多幾段、最低分數、最長秒數）、OBS 開關 / 位址 / 連接埠 / 密碼、「測試連線」按鈕。
+// 介面語言（選了立刻生效）、精華挑選（最多幾段、最低分數、最長秒數）、Minecraft 玩家名稱、OBS 開關 / 位址 / 連接埠 / 密碼、「測試連線」按鈕。
 // 關閉視窗時存檔；密碼有改才重新加密。
 // =====================================================================================
 
@@ -31,6 +31,7 @@ public partial class SettingsWindow : Window
         MaxClipsBox.Text = s.MaxCandidates.ToString(inv);
         MinScoreBox.Text = s.MinScore.ToString("0.##", inv);
         MaxLenBox.Text = s.MaxClipLength.ToString("0", inv);
+        McPlayerBox.Text = s.MinecraftPlayerName ?? "";
         Closing += (_, _) => { SaveScan(); SaveObs(); };
     }
     
@@ -59,6 +60,8 @@ public partial class SettingsWindow : Window
         if (int.TryParse(MaxClipsBox.Text.Trim(), out var n) && n is >= 1 and <= 50) s.MaxCandidates = n;
         if (double.TryParse(MinScoreBox.Text.Trim(), num, inv, out var m) && m is >= 0 and <= 50) s.MinScore = m;
         if (double.TryParse(MaxLenBox.Text.Trim(), num, inv, out var l) && (l == 0 || l is >= 15 and <= 3600)) s.MaxClipLength = l;
+        var player = McPlayerBox.Text.Trim();
+        s.MinecraftPlayerName = player.Length == 0 ? null : player;
     }
 
     private void SaveObs()

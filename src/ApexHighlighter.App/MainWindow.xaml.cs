@@ -49,7 +49,7 @@ public partial class MainWindow : Window
     private List<(double Time, EventKind Kind)> _ticks = [];
     // Which clip edge is being dragged on the timeline ("s" or "e"), if any.
     private string? _dragEdge;
-    private bool _fillingFormats;
+    private bool _fillingFormats, _fillingGames;
 
     private ObsWatcher? _obs;
     // Recordings waiting to be imported and scanned (OBS stops while busy, or several files dropped at once).
@@ -100,8 +100,7 @@ public partial class MainWindow : Window
         Closing += (_, _) => { SaveClipsNow(); SaveSettings(); };
         Closed += async (_, _) => await StopObsAsync();
 
-        try { _cfg = KeywordConfig.Load(); }
-        catch (Exception ex) { Log(Loc.F("log.keywordsFail", ex.Message)); }
+        LoadKeywords(st.Game);
 
         // 記下 FFmpeg 從哪裡找到、什麼版本；太舊會提醒更新
         _ = LogFFmpegAsync();
@@ -197,6 +196,35 @@ public partial class MainWindow : Window
         foreach (var f in Enum.GetValues<ExportFormat>()) FormatBox.Items.Add(Loc.T("fmt." + f));
         FormatBox.SelectedIndex = sel;
         _fillingFormats = false;
+    }
+
+    // ───────────── 遊戲：Apex / Minecraft，各自一份關鍵字表 ─────────────
+
+    private void LoadKeywords(Game game)
+    {
+        try { _cfg = KeywordConfig.ForGame(game); }
+        catch (Exception ex) { _cfg = null; Log(Loc.F("log.keywordsFail", ex.Message)); }
+    }
+
+    private void FillGames()
+    {
+        _fillingGames = true;
+        GameBox.Items.Clear();
+        foreach (var g in Enum.GetValues<Game>()) GameBox.Items.Add(Loc.T("game." + g));
+        GameBox.SelectedIndex = (int)App.Settings.Game;
+        _fillingGames = false;
+    }
+
+    private void GameBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_fillingGames || GameBox.SelectedIndex < 0) return;
+        var game = (Game)GameBox.SelectedIndex;
+        if (game == App.Settings.Game) return;
+        App.Settings.Game = game;
+        App.Settings.Save();
+        LoadKeywords(game);
+        if (_info != null) Log(Loc.F("log.gameChanged", Loc.T("game." + game)));
+        UpdateButtons();
     }
 
     private void FormatBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -322,6 +350,7 @@ public partial class MainWindow : Window
         Language = XmlLanguage.GetLanguage(Loc.Current switch { "zh-Hant" => "zh-TW", "ja" => "ja-JP", _ => "en-US" });
 
         FillFormats();
+        FillGames();
         UpdateObsText();
         GameLangText.Text = _detectedGameLang == null ? Loc.T("game.auto")
             : Loc.F(_gameLangSure ? "game.detected" : "game.uncertain", GameLanguageNames.GetValueOrDefault(_detectedGameLang, _detectedGameLang));
@@ -513,6 +542,7 @@ public partial class MainWindow : Window
         {
             Language = "auto",
             PreferredLanguage = st.LastGameLanguage,
+            PlayerName = st.Game == Game.Minecraft && !string.IsNullOrWhiteSpace(st.MinecraftPlayerName) ? st.MinecraftPlayerName.Trim() : null,
             AudioTrack = Math.Max(0, AudioBox.SelectedIndex),
             MaxCandidates = Math.Max(1, st.MaxCandidates),
             MinScore = st.MinScore,
@@ -1050,6 +1080,7 @@ public partial class MainWindow : Window
         ScanButton.IsEnabled = has && !b;
         ExportButton.IsEnabled = has && !b && _clips.Any(c => c.Keep);
         AddButton.IsEnabled = has && !b;
+        GameBox.IsEnabled = !b;   // the running scan keeps the rules it started with
         PlayButton.IsEnabled = has;
     }
 

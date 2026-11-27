@@ -8,7 +8,8 @@ namespace ApexHighlighter.Core;
 // =====================================================================================
 // Keywords.cs — 判斷一行 OCR 文字是不是擊殺提示
 //
-// KeywordConfig：讀 keywords.json（每種語言的關鍵字、每種事件的分數權重）。
+// KeywordConfig：讀關鍵字表（每種語言的關鍵字、每種事件的分數權重）。
+//   每個遊戲一個檔：Apex = keywords.json、Minecraft = keywords.minecraft.json（KeywordConfig.ForGame）。
 // KeywordMatcher：
 //   Match         這行字是哪一種事件？（擊倒 / 淘汰 / 全隊淘汰 / 擊殺王 / 冠軍 / 助攻）
 //   IsSpectating  是不是在觀戰（觀戰時的提示是別人的，不算）
@@ -16,7 +17,23 @@ namespace ApexHighlighter.Core;
 //   Similarity    兩個字串有多像（0~1），OCR 常會讀錯一兩個字，所以用模糊比對
 // =====================================================================================
 
-public enum EventKind { Knock, Elimination, SquadWipe, KillLeader, Champion, Assist }
+public enum EventKind
+{
+    // Apex Legends
+    Knock, Elimination, SquadWipe, KillLeader, Champion, Assist,
+    // Minecraft
+    /// <summary>Death screen ("You Died!" / hardcore "Game Over!").</summary>
+    Death,
+    /// <summary>A chat death message where the player (ScanOptions.PlayerName) is the killer.</summary>
+    PlayerKill,
+    /// <summary>Toasts: "Advancement Made!", "Goal Reached!", "Challenge Complete!".</summary>
+    Advancement, Goal, Challenge,
+    /// <summary>Raid boss bar "Raid - Victory".</summary>
+    RaidVictory,
+}
+
+/// <summary>Which game a recording is from. Each game has its own keyword file.</summary>
+public enum Game { Apex, Minecraft }
 
 public static class EventKindText
 {
@@ -33,6 +50,12 @@ public sealed class KeywordRule
     [JsonPropertyName("requireAny")] public List<string> RequireAny { get; set; } = [];
     /// <summary>Max characters allowed before the keyword on the same line (icons read as 1–2 junk chars). -1 = any.</summary>
     [JsonPropertyName("maxPrefix")] public int MaxPrefix { get; set; } = -1;
+    /// <summary>
+    /// The player's own name (ScanOptions.PlayerName) must be in the line, but not at its start: death messages name the
+    /// victim first in every language ("Alex was slain by Steve", "Alex 被 Steve 殺死了", "Alex は Steve に殺された"),
+    /// so this means the player is the killer. Without a player name the rule never matches.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] [JsonPropertyName("playerIsKiller")] public bool PlayerIsKiller { get; set; }
 }
 
 public sealed class LanguageRules
@@ -51,7 +74,11 @@ public sealed class LanguageRules
 
 public sealed class KeywordConfig
 {
+    // New fields are left out when unset so the scan-cache fingerprint of the Apex rules stays the same as before.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] [JsonPropertyName("game")] public Game Game { get; set; } = Game.Apex;
     [JsonPropertyName("weights")] public Dictionary<EventKind, double> Weights { get; set; } = new();
+    /// <summary>A fight with one of these (seen at least twice) is suggested whatever its score, and its clip runs a little longer. Default: Champion.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] [JsonPropertyName("alwaysKeep")] public List<EventKind>? AlwaysKeep { get; set; }
     [JsonPropertyName("spectate")] public Dictionary<string, List<string>> Spectate { get; set; } = new();
     [JsonPropertyName("languages")] public List<LanguageRules> Languages { get; set; } = [];
 
@@ -70,7 +97,22 @@ public sealed class KeywordConfig
         return cfg;
     }
 
+    /// <summary>Keyword file name of each game, next to the program.</summary>
+    public static string FileFor(Game game) => game == Game.Minecraft ? "keywords.minecraft.json" : "keywords.json";
+
+    public static KeywordConfig ForGame(Game game) => Load(Path.Combine(AppContext.BaseDirectory, FileFor(game)));
+
     public double Weight(EventKind k) => Weights.TryGetValue(k, out var w) ? w : 1.0;
+
+    public bool AlwaysKeeps(EventKind k) => AlwaysKeep?.Contains(k) ?? k == EventKind.Champion;
+
+    /// <summary>Accepts "apex" / "minecraft" / "mc" (any case); anything else is null.</summary>
+    public static Game? ParseGame(string? s) => s?.Trim().ToLowerInvariant() switch
+    {
+        "apex" or "apexlegends" => Game.Apex,
+        "minecraft" or "mc" => Game.Minecraft,
+        _ => null,
+    };
 }
 
 /// <summary>Matches OCR lines against one language's rules. Tolerant to OCR noise for Latin text.</summary>
@@ -78,11 +120,14 @@ public sealed class KeywordMatcher
 {
     private readonly LanguageRules _lang;
     private readonly List<string> _spectate;
+    private readonly string _player;
 
-    public KeywordMatcher(LanguageRules lang, IEnumerable<string> spectate)
+    /// <param name="playerName">The player's own in-game name, for rules with <see cref="KeywordRule.PlayerIsKiller"/> (Minecraft).</param>
+    public KeywordMatcher(LanguageRules lang, IEnumerable<string> spectate, string? playerName = null)
     {
         _lang = lang;
         _spectate = spectate.Select(Norm).ToList();
+        _player = Norm(playerName ?? "");
     }
 
     public string LanguageId => _lang.Id;
@@ -117,12 +162,32 @@ public sealed class KeywordMatcher
                 if (r.ForbidWords.Any(fw => words.Contains(fw.ToUpperInvariant()))) goto nextRule;
                 if (r.ForbidPhrases.Any(fp => n.Contains(Norm(fp), StringComparison.Ordinal))) goto nextRule;
                 if (r.RequireAny.Count > 0 && !r.RequireAny.Any(q => FuzzyContains(n, Norm(q), out _, out _))) goto nextRule;
+                if (r.PlayerIsKiller && !PlayerIsKiller(n)) goto nextRule;
                 var rest = endIdx < n.Length ? n[endIdx..] : "";
                 return (r.Kind, rest);
             }
             nextRule:;
         }
         return null;
+    }
+
+    /// <summary>
+    /// The player's name is in the line after the first 3 characters (Minecraft names are 3+ characters, and the victim's
+    /// name comes first; an icon or timestamp may add 1–2 junk characters in front).
+    /// </summary>
+    private bool PlayerIsKiller(string n)
+    {
+        if (_player.Length == 0) return false;
+        int from = 0;
+        while (from < n.Length)
+        {
+            int i = n.IndexOf(_player, from, StringComparison.Ordinal);
+            if (i < 0) break;
+            if (i >= 3) return true;
+            from = i + 1;
+        }
+        // OCR noise: fuzzy search in the part after the victim's name.
+        return _player.Length >= 6 && n.Length > 3 && FuzzyContains(n[3..], _player, out _, out _) && !n.StartsWith(_player, StringComparison.Ordinal);
     }
 
     /// <summary>At least 80% of the Latin letters are capitals (needs 4+ letters to judge).</summary>

@@ -55,6 +55,8 @@ public static class ScanCache
             o.PostRoll.ToString(inv), o.MinScore.ToString(inv), o.MaxCandidates.ToString(inv), o.MaxClipLength.ToString(inv),
             o.VerifyCandidates, o.VerifyFps.ToString(inv), o.VerifyTrustSamples.ToString(inv), o.VerifyMinFrames.ToString(inv),
             o.VerifySpare.ToString(inv), cfg == null ? "" : JsonSerializer.Serialize(cfg, Json));
+        // Only Minecraft scans use a player name; leaving it out when empty keeps older Apex fingerprints valid.
+        if (!string.IsNullOrWhiteSpace(o.PlayerName)) s += "|player:" + o.PlayerName.Trim().ToUpperInvariant();
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(s)))[..16];
     }
 

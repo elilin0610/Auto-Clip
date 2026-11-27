@@ -72,6 +72,9 @@
             <Button x:Name="CancelButton" DockPanel.Dock="Left" Click="Cancel_Click" IsEnabled="False" Content="{l:Tr btn.cancel}"/>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock x:Name="ObsText" Style="{StaticResource Label}" Margin="0,0,16,0" Visibility="Collapsed"/>
+                <TextBlock Style="{StaticResource Label}" Text="{l:Tr game.pick}" Margin="0,0,6,0" ToolTip="{l:Tr game.pickTip}"/>
+                <ComboBox x:Name="GameBox" Width="130" Margin="0,0,14,0" SelectionChanged="GameBox_SelectionChanged"
+                          ToolTip="{l:Tr game.pickTip}" AutomationProperties.Name="{l:Tr game.pick}"/>
                 <TextBlock x:Name="GameLangText" Style="{StaticResource Label}" ToolTip="{l:Tr game.tip}"/>
                 <Button Margin="10,0,0,0" Click="Settings_Click" Content="{l:Tr btn.settings}" AutomationProperties.Name="{l:Tr set.title}"/>
             </StackPanel>

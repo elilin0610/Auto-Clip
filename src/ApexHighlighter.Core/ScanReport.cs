@@ -43,6 +43,7 @@ public static class ScanReport
         sb.AppendLine(Loc.F("rep.file", r.File));
         sb.AppendLine(Loc.F("rep.length", TimeFmt.Hms(r.Duration), r.Resolution));
         sb.AppendLine(Loc.F("rep.time", r.ScanSeconds, r.FramesScanned, r.ScanSeconds > 0 ? r.Duration / r.ScanSeconds : 0));
+        sb.AppendLine(Loc.F("rep.game", Loc.T("game." + r.Game)));
         sb.AppendLine(Loc.F("rep.lang", r.Language, r.OcrLanguage, r.LanguageVerified ? "" : Loc.T("rep.unverified")));
         if (r.PromptPosition != null) sb.AppendLine(r.PromptPosition);
         if (r.SpectatingFramesSkipped > 0) sb.AppendLine(Loc.F("rep.spect", r.SpectatingFramesSkipped));

@@ -82,6 +82,33 @@ public static class Loc
         ["kind.KillLeader"] = ["Kill leader", "成為擊殺王", "キルリーダー"],
         ["kind.Champion"] = ["Champion", "冠軍", "チャンピオン"],
         ["kind.Assist"] = ["Assist", "助攻", "アシスト"],
+        ["kind.Death"] = ["Death", "死亡", "死亡"],
+        ["kind.PlayerKill"] = ["Player kill", "擊殺玩家", "プレイヤーキル"],
+        ["kind.Advancement"] = ["Advancement", "進度", "進捗"],
+        ["kind.Goal"] = ["Goal", "目標", "目標"],
+        ["kind.Challenge"] = ["Challenge", "挑戰", "挑戦"],
+        ["kind.RaidVictory"] = ["Raid victory", "突襲勝利", "襲撃に勝利"],
+        ["game.Apex"] = ["Apex Legends", "Apex 英雄", "Apex Legends"],
+        ["game.Minecraft"] = ["Minecraft", "Minecraft", "Minecraft"],
+        ["game.pick"] = ["Game", "遊戲", "ゲーム"],
+        ["game.pickTip"] = [
+            "Which game the recordings are from. Each game has its own prompts to look for. Applies from the next scan.",
+            "錄影是哪個遊戲的。每個遊戲要找的畫面提示不一樣。下次掃描生效。",
+            "録画のゲーム。ゲームごとに探す表示が違います。次回のスキャンから反映されます。"],
+        ["log.gameChanged"] = [
+            "Game set to {0}. Click \"Find highlights\" to scan this recording again with its prompts.",
+            "遊戲改成 {0}。要用新的規則重新找，請再按一次「掃描精華」。",
+            "ゲームを {0} にしました。この録画をその表示で探し直すには「ハイライトを探す」をもう一度押してください。"],
+        ["note.mcNoPlayer"] = [
+            "No Minecraft player name is set, so kills in chat are not counted (deaths, advancements and raid victories still are). Set it under Settings > Minecraft player name.",
+            "沒有設定 Minecraft 玩家名稱，所以聊天欄裡的擊殺不會算（死亡、進度、突襲勝利照樣會抓）。可在 Settings > Minecraft player name 設定。",
+            "Minecraft のプレイヤー名が未設定のため、チャットのキルは数えません（死亡・進捗・襲撃の勝利は数えます）。Settings > Minecraft player name で設定できます。"],
+        ["set.mc"] = ["Minecraft", "Minecraft", "Minecraft"],
+        ["set.mcPlayer"] = ["Minecraft player name", "Minecraft 玩家名稱", "Minecraft のプレイヤー名"],
+        ["set.mcNote"] = [
+            "Used only to tell which chat death messages are your kills (\"Alex was slain by <you>\"). Score: death 2, player kill 1.5, advancement 1, goal 2, challenge 3, raid victory 3; a challenge or raid victory is always suggested.",
+            "只用來判斷聊天欄的死亡訊息是不是你殺的（「Alex 被 <你> 殺死了」）。分數：死亡 2、擊殺玩家 1.5、進度 1、目標 2、挑戰 3、突襲勝利 3；完成挑戰或突襲勝利一定會列入。",
+            "チャットの死亡メッセージがあなたのキルかどうかの判定にだけ使います（「Alex was slain by <あなた>」）。スコア：死亡 2、プレイヤーキル 1.5、進捗 1、目標 2、挑戦 3、襲撃の勝利 3。挑戦の達成と襲撃の勝利は必ず候補に入ります。"],
         ["list.sep"] = [", ", "、", "、"],
 
         // ── Core errors / notes ──
@@ -179,6 +206,7 @@ public static class Loc
             "Scan time: {0:0.0} s ({1} samples, about {2:0.0}x real time)",
             "掃描耗時：{0:0.0} 秒（{1} 張取樣，約 {2:0.0} 倍速）",
             "スキャン時間：{0:0.0} 秒（{1} 枚をサンプリング、約 {2:0.0} 倍速）"],
+        ["rep.game"] = ["Game: {0}", "遊戲：{0}", "ゲーム：{0}"],
         ["rep.lang"] = ["Game language: {0} (OCR {1}{2})", "遊戲語言：{0}（OCR {1}{2}）", "ゲームの言語：{0}（OCR {1}{2}）"],
         ["rep.unverified"] = [", keywords not yet verified", "，關鍵字未經實測", "、キーワード未検証"],
         ["rep.spect"] = ["Spectating frames skipped: {0}", "觀戰畫面略過：{0} 張", "観戦画面をスキップ：{0} 枚"],

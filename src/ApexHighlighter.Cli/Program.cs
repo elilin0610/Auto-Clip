@@ -32,6 +32,10 @@ string Opt(string name, string def)
 
 bool Flag(string name) => Array.IndexOf(args, name) >= 0;
 
+// --game apex|minecraft（預設 apex）：決定用哪一份關鍵字表
+Game GameOpt() => KeywordConfig.ParseGame(Opt("--game", "apex"))
+    ?? throw new ArgumentException($"未知的遊戲：{Opt("--game", "")}（可用 apex、minecraft）");
+
 // CLI output stays in Traditional Chinese unless --ui-lang en|zh-Hant|ja is given.
 Loc.Set(Opt("--ui-lang", "zh-Hant"));
 
@@ -100,10 +104,12 @@ async Task<int> Scan()
     };
     if (Opt("--prefer-lang", "") is { Length: > 0 } pref) opt.PreferredLanguage = pref;
     if (Opt("--workers", "") is { Length: > 0 } wk) opt.Workers = int.Parse(wk);
+    var game = GameOpt();
+    if (game == Game.Minecraft && Opt("--player", "") is { Length: > 0 } player) opt.PlayerName = player;
 
     ShowMediaInfo(info);
 
-    var keywordCfg = KeywordConfig.Load();
+    var keywordCfg = KeywordConfig.ForGame(game);
     ScanResult result = null!;
     await AnsiConsole.Progress()
         .AutoClear(false)
@@ -219,7 +225,7 @@ async Task<int> Batch()
 {
     // 多支錄影：掃描（CPU）和剪片（GPU）分兩站同時進行，一支掃完就去剪，下一支接著掃（Core 的 Pipeline）
     // Several recordings: scanning (CPU) and exporting (GPU) run as two stations at once (Core.Pipeline).
-    string[] valued = ["--out", "--scan-workers", "--export-workers", "--format", "--track", "--lang", "--max", "--min-score", "--ui-lang"];
+    string[] valued = ["--out", "--scan-workers", "--export-workers", "--format", "--track", "--lang", "--max", "--min-score", "--ui-lang", "--game", "--player"];
     var inputs = new List<string>();
     for (int i = 1; i < args.Length; i++)
     {
@@ -234,7 +240,7 @@ async Task<int> Batch()
     if (inputs.Count == 0)
     {
         AnsiConsole.MarkupLine("[red]✘ 沒有錄影檔[/]");
-        AnsiConsole.MarkupLine($"  用法：[{Accent}]apexhl batch <錄影檔或資料夾…> --out <輸出資料夾> [--scan-workers 1] [--export-workers 2] [--no-export] [--no-verify][/]");
+        AnsiConsole.MarkupLine($"  用法：[{Accent}]apexhl batch <錄影檔或資料夾…> --out <輸出資料夾> [--game apex|minecraft] [--player 名稱] [--scan-workers 1] [--export-workers 2] [--no-export] [--no-verify][/]");
         return 2;
     }
     var outDir = Path.GetFullPath(Opt("--out", Path.Combine(Path.GetDirectoryName(inputs[0])!, "highlights")));
@@ -247,7 +253,8 @@ async Task<int> Batch()
     void Say(string markup) { lock (gate) AnsiConsole.MarkupLine($"[grey]{DateTime.Now:HH:mm:ss}[/] {markup}"); }
 
     AnsiConsole.MarkupLine($"[bold]{inputs.Count}[/] 支錄影 → {PathLink(outDir)}  [grey](掃描 {scanWorkers} 支、剪片 {exportWorkers} 支同時進行)[/]");
-    var keywords = KeywordConfig.Load();
+    var game = GameOpt();
+    var keywords = KeywordConfig.ForGame(game);
 
     var results = await Pipeline.RunAsync(inputs,
         async (file, ct) =>
@@ -262,6 +269,7 @@ async Task<int> Batch()
                 MaxCandidates = int.Parse(Opt("--max", "3")),
                 MinScore = double.Parse(Opt("--min-score", "2"), CultureInfo.InvariantCulture),
                 VerifyCandidates = !Flag("--no-verify"),
+                PlayerName = game == Game.Minecraft && Opt("--player", "") is { Length: > 0 } player ? player : null,
             };
             if (scanWorkers > 1) opt.Workers = Math.Max(2, opt.Workers / scanWorkers);   // 同時掃好幾支時，分掉 OCR worker
             var result = await new Scanner(keywords).ScanAsync(info, opt, null, ct);
@@ -459,7 +467,7 @@ static void ShowHelp()
     AnsiConsole.Write(new Rule($"[bold {Accent}]apexhl[/] [grey]Apex 精華挑片 · 命令列版[/]").LeftJustified());
     var t = new Table().Border(TableBorder.None).HideHeaders()
         .AddColumn(new TableColumn("").NoWrap().PadRight(3)).AddColumn("");
-    t.AddRow($"[{Accent}]scan[/] <錄影檔>", "找出精華（預設最多 3 段）\n[grey]--lang auto|en|zh-Hant…  --prefer-lang en  --fps 2  --width 1280  --workers N  --track N\n--max 3  --min-score 2  --max-len 120（0 = 不限）  --no-region（每張都讀整個畫面）  --no-verify（不做二次確認）[/]");
+    t.AddRow($"[{Accent}]scan[/] <錄影檔>", "找出精華（預設最多 3 段）\n[grey]--game apex|minecraft  --player <Minecraft 玩家名稱>  --lang auto|en|zh-Hant…  --prefer-lang en  --fps 2  --width 1280  --workers N  --track N\n--max 3  --min-score 2  --max-len 120（0 = 不限）  --no-region（每張都讀整個畫面）  --no-verify（不做二次確認）[/]");
     t.AddRow($"[{Accent}]export[/] <錄影檔> <開始> <結束> <輸出.mp4>", "剪出一段\n[grey]--format landscape|vcrop|vfit  --track N  --mix（混合所有音軌）  --loudnorm（音量標準化）[/]");
     t.AddRow($"[{Accent}]batch[/] <錄影檔或資料夾…>", "一次處理好幾支：掃描和剪片同時進行，一支掃完就剪\n[grey]--out <資料夾>  --scan-workers 1  --export-workers 2  --format landscape|vcrop|vfit  --no-export  --no-verify[/]");
     t.AddRow($"[{Accent}]thumb[/] <錄影檔> <秒> <輸出.jpg>", "存一張縮圖  [grey]--width 192[/]");

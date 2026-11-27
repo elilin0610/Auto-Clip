@@ -24,8 +24,8 @@ namespace ApexHighlighter.Core;
 // =====================================================================================
 
 /// <summary>
-/// Scans a recording for Apex on-screen prompts (knock / elimination / squad wipe / kill leader / champion)
-/// using Windows OCR on the whole frame, so neither HUD position nor game language is assumed.
+/// Scans a recording for on-screen prompts (Apex: knock / elimination / squad wipe / kill leader / champion;
+/// Minecraft: death screen / advancement toasts / raid victory / the player's kills in chat) using Windows OCR on the whole frame, so neither HUD position nor game language is assumed.
 /// </summary>
 public sealed class Scanner
 {
@@ -42,10 +42,12 @@ public sealed class Scanner
     public async Task<ScanResult> ScanAsync(MediaInfo info, ScanOptions opt, IProgress<ScanProgress>? progress, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        var result = new ScanResult { File = info.Path, Duration = info.Duration, Resolution = $"{info.Width}x{info.Height}" };
+        var result = new ScanResult { File = info.Path, Duration = info.Duration, Resolution = $"{info.Width}x{info.Height}", Game = _cfg.Game };
+        if (_cfg.Game == Game.Minecraft && string.IsNullOrWhiteSpace(opt.PlayerName))
+            result.Notes.Add(Loc.T("note.mcNoPlayer"));
 
         // 準備所有可能的語言組合（電腦有裝哪些 OCR 語言就用哪些）
-        var pairs = BuildPairs(opt.Language, result.Notes);
+        var pairs = BuildPairs(opt.Language, opt.PlayerName, result.Notes);
         if (pairs.Count == 0)
             throw new InvalidOperationException(Loc.T("err.noOcr"));
         // 上次掃描判斷出的遊戲語言：只要一點點證據就能勝出，不用每種語言都試很久
@@ -232,7 +234,7 @@ public sealed class Scanner
             lock (gate) roi = region;
             var reader = OcrReader.Create(winner.OcrTag);
             result.Clusters = await CandidateVerifier.SelectAsync(result.Clusters, opt, _cfg.Weight,
-                c => RereadAsync(info, c, winner.Matcher, reader, roi, opt, result.Notes, ct), ct);
+                c => RereadAsync(info, c, winner.Matcher, reader, roi, opt, result.Notes, ct), ct, _cfg.AlwaysKeeps);
             var checkedOnes = result.Clusters.Where(c => c.Check is { Rechecked: > 0, Reread: true }).ToList();
             if (checkedOnes.Count > 0)
                 result.Notes.Add(Loc.F("note.verified", checkedOnes.Count, checkedOnes.Sum(c => c.Check!.Rechecked),
@@ -277,7 +279,7 @@ public sealed class Scanner
 
     // 列出要試的「語言 × OCR 引擎」組合。
     // 如果某語言沒裝對應的 OCR（例如沒裝韓文），但它的關鍵字是英文字母，就借英文 OCR 來讀。
-    private List<Pair> BuildPairs(string language, List<string> notes)
+    private List<Pair> BuildPairs(string language, string? playerName, List<string> notes)
     {
         var installed = OcrReader.InstalledLanguages();
         var langs = language == "auto" ? _cfg.Languages : _cfg.Languages.Where(l => l.Id == language).ToList();
@@ -287,7 +289,7 @@ public sealed class Scanner
         foreach (var l in langs)
         {
             var spect = _cfg.Spectate.TryGetValue(l.Id, out var s) ? s : [];
-            var matcher = new KeywordMatcher(l, spect);
+            var matcher = new KeywordMatcher(l, spect, playerName);
             var tag = OcrReader.ResolveTag(l.OcrTags);
             if (tag != null)
             {
@@ -305,6 +307,9 @@ public sealed class Scanner
             notes.Add(Loc.F("note.ocrAvailable", string.Join(Loc.T("list.sep"), installed)));
         return pairs;
     }
+
+    /// <summary>How much of a death screen counts as part of the moment (it can stay up for minutes).</summary>
+    internal const double DeathScreenSeconds = 3;
 
     // 去重複：4 秒內、同種類、被擊殺者名字相似（相似度 ≥ 55%）→ 視為同一個提示。
     // 例外：同一張畫面同時出現兩行「擊倒」而且名字明顯不同 → 是兩個人，分開算。
@@ -326,7 +331,7 @@ public sealed class Scanner
                 bool bothNamed = e.Name.Length >= 3 && name.Length >= 3;
                 bool sameName = !bothNamed || KeywordMatcher.Similarity(e.Name, name) >= 0.55;
                 // Knocks / eliminations can stack (two lines at once) only when the names clearly differ.
-                bool stackable = h.Kind is EventKind.Knock or EventKind.Elimination;
+                bool stackable = h.Kind is EventKind.Knock or EventKind.Elimination or EventKind.PlayerKill;
                 if (h.Time == e.Last && stackable && bothNamed && !sameName) continue;
                 if (h.Time == e.Last || sameName) { match = i; break; }
             }
@@ -339,7 +344,9 @@ public sealed class Scanner
             else events.Add((h.Time, h.Time, h.Kind, name, h.Text, 1));
         }
         // A real prompt stays ~2 s, so seeing it in only one sample at >=2 fps is weak; keep it but it scores less in clustering.
-        return events.Select(e => new GameEvent(e.First, e.Last, e.Kind, e.Text.Trim(), e.N)).ToList();
+        // The Minecraft death screen stays up until the player clicks Respawn; only its first seconds belong to the clip.
+        return events.Select(e => new GameEvent(e.First, e.Kind == EventKind.Death ? Math.Min(e.Last, e.First + DeathScreenSeconds) : e.Last,
+            e.Kind, e.Text.Trim(), e.N)).ToList();
     }
 
     // 把事件分成一場一場的交戰，並決定每段片段的起訖時間。
@@ -368,7 +375,7 @@ public sealed class Scanner
             double start = audio != null
                 ? audio.EstimateFightStart(first, opt.MinPreRoll, opt.MaxPreRoll)
                 : Math.Max(0, first - (opt.MinPreRoll + opt.MaxPreRoll) / 2);
-            double end = Math.Min(duration, last + PostRoll(g, opt));
+            double end = Math.Min(duration, last + PostRoll(g, opt, _cfg));
             // A fight that can't be split any further: keep only the minimum lead-in so it fits if it can.
             if (opt.MaxClipLength > 0 && end - start > opt.MaxClipLength)
                 start = Math.Max(start, Math.Min(first - opt.MinPreRoll, end - opt.MaxClipLength));
@@ -397,7 +404,8 @@ public sealed class Scanner
             double first = g[0].Time, last = g.Max(e => e.LastSeen);
 
             // 不合格的情況：分數太低（但拿冠軍一定留）、只有助攻
-            bool champion = g.Any(e => e.Kind == EventKind.Champion && e.Samples >= 2);
+            // 冠軍（Minecraft：完成挑戰、突襲勝利）一定留
+            bool champion = g.Any(e => _cfg.AlwaysKeeps(e.Kind) && e.Samples >= 2);
             var reject = RejectKind.None;
             if (score < opt.MinScore && !champion) reject = RejectKind.LowScore;
             else if (g.All(e => e.Kind == EventKind.Assist)) reject = RejectKind.AssistOnly;
@@ -420,8 +428,8 @@ public sealed class Scanner
             : c).OrderBy(c => c.Start).ToList();
     }
 
-    private static double PostRoll(List<GameEvent> g, ScanOptions opt) =>
-        opt.PostRoll + (g.Any(e => e.Kind == EventKind.Champion) ? 8 : 0);
+    private static double PostRoll(List<GameEvent> g, ScanOptions opt, KeywordConfig? cfg = null) =>
+        opt.PostRoll + (g.Any(e => cfg?.AlwaysKeeps(e.Kind) ?? e.Kind == EventKind.Champion) ? 8 : 0);
 
     /// <summary>
     /// Splits a fight whose clip would be longer than MaxClipLength at its longest gap between prompts, recursively.
