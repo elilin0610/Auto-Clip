@@ -25,12 +25,17 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$ExePath = (Join-Path $PSScriptRoot '..\src\ApexHighlighter.App\bin\Release\net11.0-windows10.0.19041.0\ApexHighlighter.App.exe'),
+    [string]$ExePath,
     [switch]$UseDotnet,
     [switch]$Remove
 )
 
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 leaves $PSScriptRoot empty inside param() defaults, so the default path is filled in here.
+# Windows PowerShell 5.1 在 param() 預設值裡 $PSScriptRoot 是空的，所以預設路徑改在這裡補。
+if (-not $ExePath) {
+    $ExePath = Join-Path $PSScriptRoot '..\src\ApexHighlighter.App\bin\Release\net11.0-windows10.0.19041.0\ApexHighlighter.App.exe'
+}
 $name = 'Apex Highlight Picker'
 $programs = [Environment]::GetFolderPath('Programs')   # %APPDATA%\Microsoft\Windows\Start Menu\Programs
 $lnk = Join-Path $programs "$name.lnk"
