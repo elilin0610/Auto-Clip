@@ -17,6 +17,7 @@ public partial class SettingsWindow : Window
     public SettingsWindow()
     {
         InitializeComponent();
+        DarkTitleBar.Attach(this);
         UiLanguageBox.ItemsSource = Loc.Languages;
         UiLanguageBox.SelectedItem = Loc.Languages.First(l => l.Code == Loc.Current);
 
