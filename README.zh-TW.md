@@ -32,7 +32,18 @@ dotnet run --project src\ApexHighlighter.Cli -c Release -- ocr "錄影.mkv" 754.
 dotnet run --project src\ApexHighlighter.Cli -c Release -- export "錄影.mkv" 12:30 13:15 "直式.mp4" --format vfit
 dotnet run --project src\ApexHighlighter.Cli -c Release -- thumb "錄影.mkv" 754.5 "縮圖.jpg"
 dotnet run --project src\ApexHighlighter.Cli -c Release -- obswatch --port 4455
+dotnet run --project src\ApexHighlighter.Cli -c Release -- batch "D:\錄影" --out "D:\精華"
 ```
+
+`batch` 一次處理好幾支錄影，分成兩站：掃描（CPU，OCR）和剪片（GPU，NVENC）。一支掃完馬上去剪，下一支接著掃，兩站同時進行。某一支失敗不影響其他支。選項：`--scan-workers 1`、`--export-workers 2`、`--format`、`--no-export`。
+
+單元測試（不需要 FFmpeg 或錄影）：
+
+```powershell
+dotnet test tests\ApexHighlighter.Tests
+```
+
+要從頭到尾驗證一次改動（組建、測試、用真實測試錄影掃描和試剪），請看 [harness/README.zh-TW.md](harness/README.zh-TW.md)。
 
 組建後的執行檔叫 `apexhl.exe`（在 `src\ApexHighlighter.Cli\bin\<Debug或Release>\net11.0-windows10.0.19041.0\`），也可以直接執行它，例如 `apexhl scan "錄影.mkv"`。不加參數執行會顯示所有指令。`錄影.mkv` 只是範例檔名，請換成你自己的錄影路徑。
 
@@ -58,7 +69,7 @@ dotnet run --project src\ApexHighlighter.Cli -c Release -- obswatch --port 4455
 設定 →「OBS」：勾選「OBS 停止錄影後，自動匯入並掃描這次的錄影」，填位址（預設 `localhost`）、連接埠（預設 4455）和密碼，按「測試連線」確認。
 
 - OBS 那邊要先開：工具 → WebSocket 伺服器設定 → 勾選「啟用 WebSocket 伺服器」，密碼在「顯示連線資訊」。需要 OBS 28 以上。
-- 錄影一停止，程式就自動匯入那個檔案並開始掃描；如果正在掃描或匯出，會等目前的工作做完。
+- 錄影一停止，程式就自動匯入那個檔案並開始掃描；如果正在忙，會排進佇列，連續停好幾次錄影也不會漏掉。
 - 本程式只聽 OBS 的通知，不會改 OBS 的任何設定。OBS 沒開時會每 10 秒重試；密碼錯誤就停止重試。
 - 密碼用 Windows DPAPI 加密後存在 `settings.json`，只有你的 Windows 帳戶能解開，不會以明碼存檔。
 
@@ -83,6 +94,7 @@ dotnet run --project src\ApexHighlighter.Cli -c Release -- obswatch --port 4455
 - 同一個提示會連續出現好幾張，會合併成一次。相隔 25 秒內的事件算同一波交戰。
 - 片頭：從第一個擊倒往回找音量持續偏高（槍聲）的起點，限 8–25 秒。片尾：最後一個事件後 6 秒（冠軍多 8 秒）。
 - 分數：擊倒 1、淘汰 1.5、滅隊 2.5、擊殺王 1、冠軍 4、助攻 0.5。只出現一張的命中減半。分數低於 2 不給，最多取 3 段。
+- 二次確認：建議片段之前，只被讀到不到 3 次的提示，會在它出現的附近用每秒 6 張重讀一次。重讀時有再看到才算分（算全分）。分數掉到 2 以下就拿掉這段（「二次確認沒過」），換下一段來檢查。差一點沒選上的交戰，如果弱提示被確認是真的，也會補上。重讀失敗就保留原本的判斷。可以用 `--no-verify` 關掉。
 - 每次掃描都會存完整記錄到 `%LOCALAPPDATA%\ApexHighlighter\scans\`，裡面有每一行 OCR 命中的文字和位置，以及被略過的交戰和略過原因，方便檢查誤判。
 
 ## 匯出
@@ -97,7 +109,9 @@ dotnet run --project src\ApexHighlighter.Cli -c Release -- obswatch --port 4455
 ```
 src/ApexHighlighter.Core   偵測、FFmpeg、匯出（介面和 CLI 共用）
 src/ApexHighlighter.App    WPF 介面
-src/ApexHighlighter.Cli    命令列：掃描、匯出、OCR 測試、音畫同步檢查
+src/ApexHighlighter.Cli    命令列：掃描、匯出、批次、OCR 測試、音畫同步檢查
+tests/ApexHighlighter.Tests 單元測試（關鍵字規則、分群、二次確認、流水線、匯出參數、快取、佇列…）
+harness/                   一鍵驗證腳本和 Claude 的自動修正流程
 acceptance/                驗收紀錄與掃描報告
 ```
 

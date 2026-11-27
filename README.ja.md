@@ -29,7 +29,18 @@ dotnet run --project src\ApexHighlighter.Cli -c Release -- ocr "recording.mkv" 7
 dotnet run --project src\ApexHighlighter.Cli -c Release -- export "recording.mkv" 12:30 13:15 "vertical.mp4" --format vfit
 dotnet run --project src\ApexHighlighter.Cli -c Release -- thumb "recording.mkv" 754.5 "thumbnail.jpg"
 dotnet run --project src\ApexHighlighter.Cli -c Release -- obswatch --port 4455
+dotnet run --project src\ApexHighlighter.Cli -c Release -- batch "D:\Recordings" --out "D:\Highlights"
 ```
+
+`batch` は複数の録画を、スキャン（CPU、OCR）と書き出し（GPU、NVENC）の2段階で並行処理します。スキャンが終わった録画から書き出しに回し、同時に次の録画をスキャンします。1本が失敗しても残りは処理を続けます。オプション：`--scan-workers 1`、`--export-workers 2`、`--format`、`--no-export`。
+
+単体テスト（FFmpeg や録画は不要）：
+
+```powershell
+dotnet test tests\ApexHighlighter.Tests
+```
+
+ビルドから実録画のスキャン、試し書き出しまで検証するには、[検証ハーネス](harness/README.ja.md)を参照してください。
 
 ビルド後の実行ファイルは `apexhl.exe` です（`src\ApexHighlighter.Cli\bin\<Debug or Release>\net11.0-windows10.0.19041.0\`）。`apexhl scan "recording.mkv"` のように直接実行できます。引数を付けないと全コマンドを表示します。`recording.mkv` は例なので、自分の録画のパスを指定してください。
 
@@ -55,7 +66,7 @@ dotnet run --project src\ApexHighlighter.Cli -c Release -- obswatch --port 4455
 設定 → OBS で、録画停止後に自動でインポート・スキャンする項目をオンにします。アドレス（既定 `localhost`）、ポート（4455）、パスワードを入力し、接続テストします。
 
 - OBS 28 以降の［ツール］→［WebSocket サーバー設定］でサーバーを有効にし、接続情報を表示してパスワードを確認します。
-- 停止時にその録画を自動で取り込み、処理を開始します。スキャンや書き出し中は完了を待ちます。
+- 停止時にその録画を自動で取り込み、処理を開始します。処理中なら録画をキューに追加するため、複数の録画が続けて停止しても取りこぼしません。
 - OBS の通知のみ受信し、OBS の設定は変更しません。OBS が起動していないときは10秒間隔で再試行し、パスワードが誤っている場合は再試行を停止します。
 - パスワードは Windows DPAPI で暗号化し、`settings.json` に保存します。復号できるのは自分の Windows アカウントだけで、平文では保存しません。
 
@@ -80,6 +91,7 @@ dotnet run --project src\ApexHighlighter.Cli -c Release -- obswatch --port 4455
 - 複数フレームに続く同じ通知は1件に統合し、25秒以内のイベントを同じ交戦とみなします。
 - 最初のノックから8〜25秒さかのぼり、大きい音（発砲音）が続いた開始点を探します。終了は最後のイベントから6秒後で、チャンピオン時はさらに8秒延長します。
 - 点数：ノック1、キル1.5、部隊全滅2.5、キルリーダー1、チャンピオン4、アシスト0.5。1フレームだけの検出は半分、2未満は候補外で、最大3件です。
+- 再確認：提案前に、3フレーム未満で検出された通知の付近を毎秒6フレームで再読します。再検出した通知だけを満点で数え、2点未満になった候補は除外して次を確認します。しきい値に僅かに届かなかった候補も、弱い通知が確認できれば採用します。フレームの再取得に失敗した場合は最初の判断を維持します。`--no-verify` で無効にできます。
 - 完全なスキャン記録は `%LOCALAPPDATA%\ApexHighlighter\scans\` に保存し、OCR の文字と座標、候補外の交戦と理由を確認できます。
 
 ## 書き出し
@@ -94,7 +106,9 @@ dotnet run --project src\ApexHighlighter.Cli -c Release -- obswatch --port 4455
 ```
 src/ApexHighlighter.Core   検出、FFmpeg、書き出し（GUI／CLI 共通）
 src/ApexHighlighter.App    WPF GUI
-src/ApexHighlighter.Cli    CLI：スキャン、書き出し、OCR、音画同期の確認
+src/ApexHighlighter.Cli    CLI：スキャン、書き出し、一括処理、OCR、音画同期の確認
+tests/ApexHighlighter.Tests 単体テスト（キーワード、グループ化、再確認、パイプライン、出力引数、キャッシュ、キューなど）
+harness/                   一括検証スクリプトと Claude の修正ループ
 acceptance/                受け入れ記録とスキャンレポート
 ```
 
