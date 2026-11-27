@@ -110,6 +110,11 @@ public sealed class ScanOptions
     public int FullFrameEvery { get; set; } = 4;
     public int Workers { get; set; } = Math.Clamp(Environment.ProcessorCount / 2, 2, 8);
     public bool HardwareDecode { get; set; } = true;
+    /// <summary>
+    /// The player's own in-game name (Minecraft). Only used to tell which chat death messages are the player's kills;
+    /// without it those are skipped and only the death screen, advancement toasts and raid victories count.
+    /// </summary>
+    public string? PlayerName { get; set; }
     /// <summary>Audio track used to estimate when the fight started.</summary>
     public int AudioTrack { get; set; } = 0;
 
@@ -155,6 +160,8 @@ public sealed class ScanResult
     public string File { get; init; } = "";
     public double Duration { get; init; }
     public string Resolution { get; init; } = "";
+    /// <summary>Which game's keyword rules the scan used.</summary>
+    public Game Game { get; set; } = Game.Apex;
     public double ScanSeconds { get; set; }
     public int FramesScanned { get; set; }
     public string? Language { get; set; }

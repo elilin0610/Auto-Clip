@@ -1,0 +1,83 @@
+{
+  "_說明": "Minecraft 的畫面提示關鍵字表（格式同 keywords.json）。抓的是：死亡畫面（你死了／Game Over）、右上角的進度通知（取得進度／達成目標／完成挑戰）、突襲勝利的血條文字，以及聊天欄裡「你殺了別人」的死亡訊息（要在設定填 Minecraft 玩家名稱才會抓，名字在行首的是你自己死掉，不算擊殺）。Minecraft 的文字有大小寫，所以 upperCaseOnly 是 false。verified=false：還沒用實際錄影確認，用字是依遊戲語言檔推測的。",
+  "_about": "Minecraft keyword rules (same format as keywords.json): the death screen, advancement / goal / challenge toasts, the raid victory boss bar, and chat death messages where the player is the killer (needs the Minecraft player name in Settings). Not yet checked against real recordings.",
+  "game": "Minecraft",
+  "weights": { "Death": 2.0, "PlayerKill": 1.5, "Advancement": 1.0, "Goal": 2.0, "Challenge": 3.0, "RaidVictory": 3.0 },
+  "alwaysKeep": [ "Challenge", "RaidVictory" ],
+  "spectate": {},
+  "languages": [
+    {
+      "id": "en",
+      "ocr": [ "en-US", "en-GB", "en" ],
+      "verified": false,
+      "upperCaseOnly": false,
+      "anchors": [],
+      "ignore": [ "HAS MADE THE ADVANCEMENT", "HAS REACHED THE GOAL", "HAS COMPLETED THE CHALLENGE" ],
+      "rules": [
+        { "kind": "Challenge", "phrases": [ "CHALLENGE COMPLETE" ], "maxPrefix": 3 },
+        { "kind": "Goal", "phrases": [ "GOAL REACHED" ], "maxPrefix": 3 },
+        { "kind": "Advancement", "phrases": [ "ADVANCEMENT MADE" ], "maxPrefix": 3 },
+        { "kind": "RaidVictory", "phrases": [ "RAID VICTORY" ], "maxPrefix": 2 },
+        { "kind": "Death", "phrases": [ "YOU DIED", "GAME OVER" ], "maxPrefix": 2 },
+        {
+          "kind": "PlayerKill",
+          "playerIsKiller": true,
+          "phrases": [
+            "WAS SLAIN BY", "WAS SHOT BY", "WAS KILLED BY", "WAS BLOWN UP BY", "WAS FIREBALLED BY", "WAS IMPALED BY",
+            "WAS PUMMELED BY", "WAS SKEWERED BY", "WAS STUNG TO DEATH BY", "WAS OBLITERATED BY", "WAS SQUASHED BY",
+            "WAS KNOCKED INTO THE VOID BY", "WAS DOOMED TO FALL BY", "WAS STRUCK BY LIGHTNING WHILST FIGHTING",
+            "WHILST FIGHTING", "WHILST TRYING TO ESCAPE", "TO ESCAPE", "WAS FINISHED BY", "WAS BLOWN FROM A HIGH PLACE BY"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "zh-Hant",
+      "ocr": [ "zh-Hant-TW", "zh-Hant", "zh-TW", "zh-HK" ],
+      "verified": false,
+      "upperCaseOnly": false,
+      "anchors": [],
+      "ignore": [],
+      "rules": [
+        { "kind": "Challenge", "phrases": [ "完成挑戰", "挑戰完成" ], "maxPrefix": 3 },
+        { "kind": "Goal", "phrases": [ "達成目標", "目標達成" ], "maxPrefix": 3 },
+        { "kind": "Advancement", "phrases": [ "取得進度", "達成進度", "進度達成" ], "maxPrefix": 3 },
+        { "kind": "RaidVictory", "phrases": [ "突襲勝利" ], "maxPrefix": 2 },
+        { "kind": "Death", "phrases": [ "你死了", "遊戲結束" ], "maxPrefix": 2 },
+        { "kind": "PlayerKill", "playerIsKiller": true, "phrases": [ "被" ], "requireAny": [ "殺死", "射殺", "炸死", "擊殺", "殺害", "擊斃", "刺穿", "打死" ] }
+      ]
+    },
+    {
+      "id": "zh-Hans",
+      "ocr": [ "zh-Hans-CN", "zh-Hans", "zh-CN" ],
+      "verified": false,
+      "upperCaseOnly": false,
+      "anchors": [],
+      "ignore": [],
+      "rules": [
+        { "kind": "Challenge", "phrases": [ "完成挑战", "挑战完成" ], "maxPrefix": 3 },
+        { "kind": "Goal", "phrases": [ "达成目标", "目标达成" ], "maxPrefix": 3 },
+        { "kind": "Advancement", "phrases": [ "取得进度", "达成进度", "进度达成" ], "maxPrefix": 3 },
+        { "kind": "RaidVictory", "phrases": [ "袭击胜利" ], "maxPrefix": 2 },
+        { "kind": "Death", "phrases": [ "你死了", "游戏结束" ], "maxPrefix": 2 },
+        { "kind": "PlayerKill", "playerIsKiller": true, "phrases": [ "被" ], "requireAny": [ "杀死", "射杀", "炸死", "击杀", "杀害", "击毙", "刺穿", "打死" ] }
+      ]
+    },
+    {
+      "id": "ja",
+      "ocr": [ "ja-JP", "ja" ],
+      "verified": false,
+      "upperCaseOnly": false,
+      "anchors": [],
+      "ignore": [],
+      "rules": [
+        { "kind": "Challenge", "phrases": [ "挑戦を達成", "挑戦達成", "チャレンジ達成" ], "maxPrefix": 3 },
+        { "kind": "Goal", "phrases": [ "目標を達成", "目標達成" ], "maxPrefix": 3 },
+        { "kind": "Advancement", "phrases": [ "進捗を達成", "進捗達成" ], "maxPrefix": 3 },
+        { "kind": "RaidVictory", "phrases": [ "襲撃勝利" ], "maxPrefix": 2 },
+        { "kind": "Death", "phrases": [ "死んでしまった", "ゲームオーバー" ], "maxPrefix": 2 },
+        { "kind": "PlayerKill", "playerIsKiller": true, "phrases": [ "に殺された", "に殺害された", "に射抜かれた", "に射殺された", "に爆破された", "に倒された", "に吹き飛ばされた" ] }
+      ]
+    }
+  ]
+}
