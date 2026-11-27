@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using ApexHighlighter.Core;
@@ -19,22 +18,32 @@ public partial class App : Application
 {
     public static AppSettings Settings { get; private set; } = new();
 
-    // Per Windows user session; held for the app's lifetime (kept in a field so it isn't garbage-collected).
+    // Per Windows user session. The mutex says "already running"; the event lets a second launch ask the first one to
+    // come to the front. Works the same whether the app runs as ApexHighlighter.App.exe or as `dotnet ApexHighlighter.App.dll`
+    // (process name "dotnet"), because nothing here looks processes up by name.
+    // 單一實例：Mutex 判斷是否已在執行，具名事件通知原本那個把視窗叫到前面（不靠程序名稱，所以 exe 或 dotnet 啟動都可以）。
     private const string InstanceMutexName = @"Local\ApexHighlighter.App.SingleInstance";
+    private const string ActivateEventName = @"Local\ApexHighlighter.App.Activate";
     private static Mutex? _instanceMutex;
+    private static EventWaitHandle? _activateEvent;
+    private static RegisteredWaitHandle? _activateWait;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         _instanceMutex = new Mutex(initiallyOwned: true, InstanceMutexName, out bool createdNew);
         if (!createdNew)
         {
-            // Another copy is already running: bring it to the front instead of opening a second window.
+            // Another copy is already running: ask it to come to the front instead of opening a second window.
             _instanceMutex.Dispose();
             _instanceMutex = null;
-            ActivateRunningInstance();
+            SignalRunningInstance();
             Shutdown();
             return;
         }
+
+        _activateEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
+        _activateWait = ThreadPool.RegisterWaitForSingleObject(_activateEvent,
+            (_, _) => Dispatcher.BeginInvoke(new Action(BringToFront)), null, Timeout.Infinite, executeOnlyOnce: false);
 
         Settings = AppSettings.Load();
         // First run: follow the Windows display language (Chinese → 繁體中文, Japanese → 日本語, else English).
@@ -46,6 +55,8 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _activateWait?.Unregister(null);
+        _activateEvent?.Dispose();
         if (_instanceMutex != null)
         {
             try { _instanceMutex.ReleaseMutex(); } catch (ApplicationException) { }
@@ -54,23 +65,31 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    private static void ActivateRunningInstance()
+    /// <summary>Second launch: let the running copy take the foreground (Windows only allows it when we pass the right on), then wake it.</summary>
+    private static void SignalRunningInstance()
     {
-        using var self = Process.GetCurrentProcess();
-        foreach (var p in Process.GetProcessesByName(self.ProcessName))
+        AllowSetForegroundWindow(ASFW_ANY);
+        try
         {
-            using (p)
-            {
-                if (p.Id == self.Id || p.MainWindowHandle == IntPtr.Zero) continue;
-                if (IsIconic(p.MainWindowHandle)) ShowWindow(p.MainWindowHandle, SW_RESTORE);
-                SetForegroundWindow(p.MainWindowHandle);
-                return;
-            }
+            if (EventWaitHandle.TryOpenExisting(ActivateEventName, out var ev))
+                using (ev) ev.Set();
         }
+        catch { /* the first copy is shutting down; nothing to bring forward */ }
     }
 
-    private const int SW_RESTORE = 9;
-    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
-    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
+    /// <summary>First copy, on the UI thread: restore if minimized and bring the main window to the front.</summary>
+    private void BringToFront()
+    {
+        if (MainWindow is not { } w) return;
+        if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
+        if (!w.IsVisible) w.Show();
+        w.Activate();
+        // Topmost toggle: a common WPF trick to get past focus-stealing rules when Activate alone only flashes the taskbar.
+        w.Topmost = true;
+        w.Topmost = false;
+        w.Focus();
+    }
+
+    private const int ASFW_ANY = -1;
+    [DllImport("user32.dll")] private static extern bool AllowSetForegroundWindow(int dwProcessId);
 }
