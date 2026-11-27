@@ -138,6 +138,16 @@ Settings → "OBS": tick "When OBS stops recording, import and scan the recordin
 - Second look: before a fight is suggested, prompts seen in fewer than 3 samples are read again around where they appeared, at 6 frames per second. Only prompts seen again count, at full weight. If the fight's score falls below 2 it is dropped ("second look failed") and the next fight is checked instead. A fight that just missed the threshold is promoted if its weak prompts turn out to be real. If the frames can't be read again, the first decision is kept. Turn it off with `--no-verify`.
 - Every scan saves a full log to `%LOCALAPPDATA%\ApexHighlighter\scans\`, with every OCR hit's text and position, plus skipped fights and why they were skipped, so you can check false positives.
 
+## Minecraft highlights
+
+Pick **Game → Minecraft** in the toolbar (CLI: `--game minecraft`). Minecraft uses its own rule file, `keywords.minecraft.json`; Apex detection is unchanged.
+
+- Counted: the death screen (`You Died!`, hardcore `Game Over!`), the top-right toasts (`Advancement Made!`, `Goal Reached!`, `Challenge Complete!`), the raid boss bar `Raid - Victory`, and chat death messages where **you** are the killer (`Alex was slain by <you>`).
+- Kills in chat need your name: set **Settings → Minecraft player name** (CLI: `--player <name>`). The victim's name comes first in every language, so a line that starts with your name is your own death and is not a kill. Without a name, only deaths, toasts and raid victories count.
+- Score: death 2, player kill 1.5, advancement 1, goal 2, challenge 3, raid victory 3. A challenge or raid victory is always suggested. A single advancement (1) is not enough on its own.
+- The death screen can stay up until you click Respawn; only its first 3 seconds count, so the clip doesn't fill up with it.
+- Languages: English, Traditional Chinese, Simplified Chinese, Japanese. **Not yet checked against real recordings**: the words come from the game's language files. Minecraft's pixel font is small; if prompts are missed, try a larger GUI scale or the CLI `--width 1920`.
+
 ## Export
 
 - Re-encodes from the start point, so cuts are frame-accurate; audio and video both start at 0.
