@@ -25,7 +25,8 @@ namespace ApexHighlighter.App;
 //   播放器與時間軸    播放 / 暫停 / 跳轉、DrawMarkers 畫片段色塊和刻度、拖曳把手改起訖
 //   匯出              依勾選的片段逐一呼叫 Exporter，再 VerifyAsync 檢查
 //   OBS / 佇列        錄影停止或一次拖進好幾支 → 排進 FileQueue，一支一支匯入並掃描（忙的時候不會漏掉任何一支）
-//   掃描結果快取      ScanCache：重開同一支錄影直接讀回上次的結果
+//   掃描結果快取      ScanCache：重開同一支錄影直接讀回上次的結果和上次的微調（起訖、勾選、手動片段）；
+//                     掃描後改過設定會提醒要重掃
 //   匯出的「一段失敗繼續下一段」在 Core 的 ExportBatch；起訖時間的防呆在 Core 的 ClipRange
 //
 // WPF 小提醒：只有 UI 執行緒能改畫面，背景工作要用 Dispatcher 切回來。
@@ -54,6 +55,11 @@ public partial class MainWindow : Window
     // Recordings waiting to be imported and scanned (OBS stops while busy, or several files dropped at once).
     private readonly FileQueue _queue = new();
 
+    // The scan the clip list belongs to (new or from the cache), and saving the user's edits back to the cache.
+    private ScanResult? _result;
+    private bool _clipsDirty, _restoringClips;
+    private readonly DispatcherTimer _saveClipsTimer = new() { Interval = TimeSpan.FromSeconds(1.5) };
+
     // Game language found by the last scan (null = not scanned yet). Always detected automatically.
     private string? _detectedGameLang;
     private bool _gameLangSure;
@@ -73,11 +79,17 @@ public partial class MainWindow : Window
         {
             if (e.NewItems != null)
                 foreach (ClipItem c in e.NewItems)
-                    c.PropertyChanged += (_, a) => { if (a.PropertyName == nameof(ClipItem.Keep)) { DrawMarkers(); UpdateButtons(); } };
+                    c.PropertyChanged += (_, a) =>
+                    {
+                        if (a.PropertyName == nameof(ClipItem.Keep)) { DrawMarkers(); UpdateButtons(); }
+                        if (a.PropertyName is nameof(ClipItem.Keep) or nameof(ClipItem.Start) or nameof(ClipItem.End)) MarkClipsDirty();
+                    };
             if (e.OldItems != null)
                 foreach (ClipItem c in e.OldItems) c.Detach();
             Renumber(); DrawMarkers(); UpdateButtons();
+            MarkClipsDirty();
         };
+        _saveClipsTimer.Tick += (_, _) => { _saveClipsTimer.Stop(); SaveClipsNow(); };
         _timer.Tick += Timer_Tick;
         _timer.Start();
 
@@ -85,7 +97,7 @@ public partial class MainWindow : Window
         OutDirBox.Text = !string.IsNullOrWhiteSpace(st.OutputDir) ? st.OutputDir
             : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), Loc.T("dir.default"));
         RestorePlacement();
-        Closing += (_, _) => SaveSettings();
+        Closing += (_, _) => { SaveClipsNow(); SaveSettings(); };
         Closed += async (_, _) => await StopObsAsync();
 
         try { _cfg = KeywordConfig.Load(); }
@@ -387,8 +399,12 @@ public partial class MainWindow : Window
             using var cts = new CancellationTokenSource();
             var info = await MediaInfo.ProbeAsync(path, cts.Token);
             info = await info.WithTrackVolumesAsync(cts.Token);
+            SaveClipsNow();   // keep the edits made to the previous recording
             _info = info;
+            _result = null;
+            _restoringClips = true;
             _clips.Clear();
+            _restoringClips = false;
             _detectedGameLang = null;
             GameLangText.Text = Loc.T("game.auto");
             FileText.Text = $"{System.IO.Path.GetFileName(path)}　{info.Width}×{info.Height}　{info.Fps:0.##} fps　{TimeFmt.Hms(info.Duration)}";
@@ -411,10 +427,12 @@ public partial class MainWindow : Window
             SetBusy(false, Loc.T("st.ready"));
 
             // Seen this exact file before? Show the previous scan instead of making the user wait for a new one.
-            if (ScanCache.TryLoad(path) is { } prev)
+            if (ScanCache.TryLoad(path, _cfg == null ? null : ScanCache.Fingerprint(CurrentScanOptions(), _cfg)) is { } prev)
             {
-                ShowScanResult(prev.Result);
+                ShowScanResult(prev.Result, prev.Clips);
                 Log(Loc.F("log.cacheLoaded", prev.SavedAt.ToString("yyyy-MM-dd HH:mm")));
+                if (prev.Clips != null) Log(Loc.T("log.cacheClips"));
+                if (prev.SettingsChanged) Log(Loc.T("log.cacheSettingsChanged"));
                 return true;
             }
             return false;
@@ -437,15 +455,7 @@ public partial class MainWindow : Window
     {
         if (_info == null || _cfg == null || _cts != null) return;
         var st = App.Settings;
-        var opt = new ScanOptions
-        {
-            Language = "auto",
-            PreferredLanguage = st.LastGameLanguage,
-            AudioTrack = Math.Max(0, AudioBox.SelectedIndex),
-            MaxCandidates = Math.Max(1, st.MaxCandidates),
-            MinScore = st.MinScore,
-            MaxClipLength = st.MaxClipLength,
-        };
+        var opt = CurrentScanOptions();
         _cts = new CancellationTokenSource();
         SetBusy(true, Loc.T("st.scanning"));
         PausePlayer();
@@ -467,14 +477,15 @@ public partial class MainWindow : Window
             var result = await Task.Run(() => new Scanner(_cfg).ScanAsync(_info, opt, progress, _cts.Token));
             string reportPath = "";
             try { reportPath = ScanReport.Save(result).Text; } catch (Exception ex) { Log(Loc.F("log.reportFail", ex.Message)); }
-            ScanCache.Save(result);
+            ScanCache.Save(result, ScanCache.Fingerprint(opt, _cfg));
             if (result.LanguageConfident && result.Language != null && st.LastGameLanguage != result.Language)
             {
                 st.LastGameLanguage = result.Language;
                 st.Save();
             }
 
-            ShowScanResult(result);
+            ShowScanResult(result, null);
+            if (_clips.Any(c => !c.IsAuto)) MarkClipsDirty();   // clips added by hand survive a rescan; remember them with it
             Log(Loc.F("log.scanDone", result.ScanSeconds, result.ScanSeconds > 0 ? result.Duration / result.ScanSeconds : 0, result.Language, result.OcrLanguage));
             if (result.PromptPosition != null) Log(result.PromptPosition);
             foreach (var n in result.Notes) Log(Loc.F("rep.note", n));
@@ -494,12 +505,53 @@ public partial class MainWindow : Window
         finally { _cts?.Dispose(); _cts = null; UpdateButtons(); RunPending(); }
     }
 
-    /// <summary>Puts a scan result (new or from the cache) on screen: suggested clips, timeline ticks, detected game language.</summary>
-    private void ShowScanResult(ScanResult result)
+    /// <summary>The scan settings from the settings window (also what the cache fingerprint is made of).</summary>
+    private ScanOptions CurrentScanOptions()
     {
-        foreach (var c in _clips.Where(c => c.IsAuto).ToList()) _clips.Remove(c);
-        foreach (var c in result.Candidates) _clips.Add(ClipItem.FromCandidate(c));
-        SortClips();
+        var st = App.Settings;
+        return new ScanOptions
+        {
+            Language = "auto",
+            PreferredLanguage = st.LastGameLanguage,
+            AudioTrack = Math.Max(0, AudioBox.SelectedIndex),
+            MaxCandidates = Math.Max(1, st.MaxCandidates),
+            MinScore = st.MinScore,
+            MaxClipLength = st.MaxClipLength,
+        };
+    }
+
+    /// <summary>
+    /// Puts a scan result (new or from the cache) on screen: clips, timeline ticks, detected game language.
+    /// <paramref name="saved"/> is the clip list as the user left it last time; null = the scan's suggestions
+    /// (clips added by hand stay).
+    /// </summary>
+    private void ShowScanResult(ScanResult result, IReadOnlyList<SavedClip>? saved)
+    {
+        _restoringClips = true;
+        try
+        {
+            if (saved != null)
+            {
+                _clips.Clear();
+                foreach (var s in saved)
+                {
+                    ClipItem item;
+                    if (s.Candidate is int i && i >= 0 && i < result.Candidates.Count) item = ClipItem.FromCandidate(result.Candidates[i]);
+                    else if (s.Candidate == null) item = ClipItem.Manual(s.Start, s.End, s.ManualCenter);
+                    else continue;   // points at a suggestion that no longer exists
+                    item.Start = s.Start; item.End = s.End; item.Keep = s.Keep;
+                    _clips.Add(item);
+                }
+            }
+            else
+            {
+                foreach (var c in _clips.Where(c => c.IsAuto).ToList()) _clips.Remove(c);
+                foreach (var c in result.Candidates) _clips.Add(ClipItem.FromCandidate(c));
+            }
+            _result = result;
+            SortClips();
+        }
+        finally { _restoringClips = false; }
         _ticks = result.Events.Select(ev => (ev.Time, ev.Kind)).ToList();
         DrawMarkers();
         _ = LoadThumbnailsAsync();
@@ -513,6 +565,34 @@ public partial class MainWindow : Window
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => _cts?.Cancel();
+
+    // ───────────── 記住微調：起訖、勾選、手動片段存回掃描快取 ─────────────
+
+    /// <summary>The clip list changed by the user: save it shortly (several quick edits make one write).</summary>
+    private void MarkClipsDirty()
+    {
+        if (_restoringClips || _result == null || _info == null) return;
+        _clipsDirty = true;
+        _saveClipsTimer.Stop();
+        _saveClipsTimer.Start();
+    }
+
+    private void SaveClipsNow()
+    {
+        if (!_clipsDirty || _result is not { } result || _info == null) return;
+        _clipsDirty = false;
+        _saveClipsTimer.Stop();
+        var list = new List<SavedClip>();
+        foreach (var c in _clips)
+        {
+            int i = c.Candidate == null ? -1 : result.Candidates.IndexOf(c.Candidate);
+            // An auto clip whose suggestion isn't in this result is kept as a hand-made one, so it isn't lost.
+            list.Add(i >= 0
+                ? new SavedClip(c.Start, c.End, c.Keep, i, 0)
+                : new SavedClip(c.Start, c.End, c.Keep, null, c.IsAuto ? c.ThumbTime : c.ManualCenter));
+        }
+        ScanCache.SaveClips(_info.Path, list);
+    }
 
     // ───────────── 匯出：把勾選的片段逐一剪出並檢查 ─────────────
 

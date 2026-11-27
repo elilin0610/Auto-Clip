@@ -103,6 +103,7 @@ async Task<int> Scan()
 
     ShowMediaInfo(info);
 
+    var keywordCfg = KeywordConfig.Load();
     ScanResult result = null!;
     await AnsiConsole.Progress()
         .AutoClear(false)
@@ -116,13 +117,13 @@ async Task<int> Scan()
                 task.Value = p.Fraction;
                 task.Description = p.Hits is { Count: > 0 } h ? $"掃描中 · 已讀到 [yellow]{h.Count}[/] 個提示" : "掃描中";
             });
-            result = await new Scanner(KeywordConfig.Load()).ScanAsync(info, opt, progress, cts.Token);
+            result = await new Scanner(keywordCfg).ScanAsync(info, opt, progress, cts.Token);
             task.Value = 1;
             task.Description = "掃描完成";
         });
 
     var (json, txt) = ScanReport.Save(result, Opt("--report-dir", ScanReport.DefaultFolder));
-    ScanCache.Save(result);   // 介面之後打開同一支錄影，就直接讀回這次的結果
+    ScanCache.Save(result, ScanCache.Fingerprint(opt, keywordCfg));   // 介面之後打開同一支錄影，就直接讀回這次的結果
 
     var lang = result.Language ?? "?";
     AnsiConsole.MarkupLine($"遊戲語言 [{Accent}]{Markup.Escape(lang)}[/]{(result.LanguageConfident ? "" : " [grey](提示太少，不太確定)[/]")}" +
@@ -265,7 +266,7 @@ async Task<int> Batch()
             if (scanWorkers > 1) opt.Workers = Math.Max(2, opt.Workers / scanWorkers);   // 同時掃好幾支時，分掉 OCR worker
             var result = await new Scanner(keywords).ScanAsync(info, opt, null, ct);
             ScanReport.Save(result);
-            ScanCache.Save(result);
+            ScanCache.Save(result, ScanCache.Fingerprint(opt, keywords));
             Say($"[{Accent}]掃完[/] {name}：{result.Candidates.Count} 段  [grey]({result.ScanSeconds:0.0} 秒)[/]");
             return (Info: info, Result: result, Track: opt.AudioTrack);
         }, scanWorkers,

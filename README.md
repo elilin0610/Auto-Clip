@@ -89,6 +89,8 @@ Put the OBS password for `obswatch` in the environment variable `APEXHL_OBS_PASS
 ## The interface
 
 1. **Import recording…**, or drag an MKV/MP4 straight into the window. The app measures the loudness of each audio track and picks the one that has sound by default.
+   - Choose or drop **several recordings** at once and they are scanned one after another.
+   - **Reopening a recording you already scanned** (same file, unchanged) shows the last scan right away, together with your edits: start/end times, ticks, and clips you added by hand. If you changed the highlight settings or keyword rules since that scan, the log says so; press "Find highlights" to rescan with the new settings.
 2. **Find highlights**: lists up to 3 clips. Each one shows a thumbnail, its time, what triggered it (for example "Knock ×2, Elimination"), when each prompt appeared, and how many seconds of lead-in were added. If the app isn't confident, it lists nothing.
    - While scanning, prompts appear live as yellow ticks on the timeline. Click a tick to jump there and look without waiting for the scan to finish.
 3. Click a clip: the player jumps to its start, and you can adjust it:
