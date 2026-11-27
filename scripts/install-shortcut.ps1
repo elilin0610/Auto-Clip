@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   在開始功能表建立「Apex Highlight Picker」捷徑，讓 Windows 搜尋找得到 App。
   Creates an "Apex Highlight Picker" Start menu shortcut so Windows Search can find the app.
