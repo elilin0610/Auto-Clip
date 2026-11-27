@@ -82,7 +82,7 @@ public partial class SettingsWindow : Window
         catch (Exception ex)
         {
             ObsTestResult.Foreground = new SolidColorBrush(Color.FromRgb(0xE5, 0x48, 0x4D));
-            ObsTestResult.Text = ex is ObsAuthException ? Loc.T("obs.authFail") : Loc.F("obs.fail", ex.Message);
+            ObsTestResult.Text = ObsWatcher.FriendlyError(ex, host, port);
         }
         finally { ObsTestButton.IsEnabled = true; }
     }
