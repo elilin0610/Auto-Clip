@@ -445,6 +445,14 @@ public static class Loc
             "Loaded the previous scan of this recording ({0}), no rescan needed. Press \"Find highlights\" to scan it again.",
             "已讀回這支錄影上次的掃描結果（{0}），不用重掃。想重掃請按「掃描精華」。",
             "この録画の前回のスキャン結果（{0}）を読み込みました。再スキャンは不要です。やり直すには「ハイライトを探す」を押してください。"],
+        ["log.cacheClips"] = [
+            "Your clip edits from last time (start/end, ticks, clips added by hand) are restored.",
+            "已還原你上次的微調（起訖、勾選、手動新增的片段）。",
+            "前回の調整（開始・終了、チェック、手動で追加したクリップ）を復元しました。"],
+        ["log.cacheSettingsChanged"] = [
+            "Highlight settings or keyword rules changed since this scan. Press \"Find highlights\" to apply them (your clip edits will be replaced by the new suggestions).",
+            "這次掃描之後，精華挑選設定或關鍵字規則改過了。要套用新設定請按「掃描精華」重掃（微調會換成新的建議）。",
+            "このスキャンの後でハイライト設定またはキーワードのルールが変わりました。反映するには「ハイライトを探す」で再スキャンしてください（調整は新しい候補に置き換わります）。"],
         ["log.queued"] = ["Queued: {0} ({1} waiting).", "已排入佇列：{0}（共 {1} 支等待中）。", "キューに追加：{0}（待機中 {1} 本）。"],
         ["log.batch"] = [
             "{0} recordings will be scanned one after another. Open any of them later to see its results right away.",

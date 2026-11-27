@@ -133,11 +133,13 @@ public class ScanCacheTests
                 File = video, Duration = 600, Language = "en", LanguageConfident = true,
                 Events = c.Events, Clusters = [c], Candidates = [c],
             };
-            Assert.NotNull(ScanCache.Save(result, dir));
+            Assert.NotNull(ScanCache.Save(result, null, dir));
 
-            var back = ScanCache.TryLoad(video, dir);
+            var back = ScanCache.TryLoad(video, null, dir);
             Assert.NotNull(back);
-            var r = back!.Value.Result;
+            var r = back!.Result;
+            Assert.Null(back.Clips);
+            Assert.False(back.SettingsChanged);
             Assert.Equal("en", r.Language);
             var bc = Assert.Single(r.Candidates);
             Assert.Equal(10, bc.Start);
@@ -146,7 +148,61 @@ public class ScanCacheTests
             Assert.Equal(EventKind.Knock, Assert.Single(bc.Events).Kind);
 
             File.AppendAllText(video, "changed");
-            Assert.Null(ScanCache.TryLoad(video, dir));
+            Assert.Null(ScanCache.TryLoad(video, null, dir));
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    private static (string Dir, string Video, ScanResult Result) Fixture()
+    {
+        var dir = Directory.CreateTempSubdirectory("apexhl-test").FullName;
+        var video = Path.Combine(dir, "rec.mkv");
+        File.WriteAllBytes(video, new byte[100]);
+        var c = new Candidate { Start = 10, End = 50, FirstEvent = 20, LastEvent = 44, Score = 3.5, Events = [new GameEvent(20, 21, EventKind.Knock, "KNOCKED DOWN", 3)] };
+        return (dir, video, new ScanResult { File = video, Duration = 600, Clusters = [c], Candidates = [c], Events = c.Events });
+    }
+
+    [Fact]
+    public void Clip_edits_are_remembered_until_the_next_scan()
+    {
+        var (dir, video, result) = Fixture();
+        try
+        {
+            Assert.False(ScanCache.SaveClips(video, [], dir));   // nothing cached yet
+            ScanCache.Save(result, "abc", dir);
+            Assert.True(ScanCache.SaveClips(video, [new SavedClip(12, 40, false, 0, 0), new SavedClip(100, 130, true, null, 115)], dir));
+
+            var back = ScanCache.TryLoad(video, "abc", dir)!;
+            Assert.Equal(2, back.Clips!.Count);
+            Assert.Equal(new SavedClip(12, 40, false, 0, 0), back.Clips[0]);
+            Assert.Null(back.Clips[1].Candidate);
+            Assert.Equal(115, back.Clips[1].ManualCenter);
+
+            ScanCache.Save(result, "abc", dir);   // a fresh scan starts from its own suggestions again
+            Assert.Null(ScanCache.TryLoad(video, "abc", dir)!.Clips);
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    [Fact]
+    public void Changed_settings_are_flagged_but_the_scan_is_still_shown()
+    {
+        var (dir, video, result) = Fixture();
+        try
+        {
+            var cfg = TestData.Config;
+            var before = ScanCache.Fingerprint(new ScanOptions(), cfg);
+            Assert.Equal(before, ScanCache.Fingerprint(new ScanOptions(), cfg));
+            var after = ScanCache.Fingerprint(new ScanOptions { MaxCandidates = 5 }, cfg);
+            Assert.NotEqual(before, after);
+            Assert.NotEqual(before, ScanCache.Fingerprint(new ScanOptions { MaxClipLength = 60 }, cfg));
+            Assert.NotEqual(before, ScanCache.Fingerprint(new ScanOptions(), null));   // keyword rules are part of it
+
+            ScanCache.Save(result, before, dir);
+            Assert.False(ScanCache.TryLoad(video, before, dir)!.SettingsChanged);
+            var changed = ScanCache.TryLoad(video, after, dir);
+            Assert.NotNull(changed);
+            Assert.True(changed!.SettingsChanged);
         }
         finally { try { Directory.Delete(dir, true); } catch { } }
     }

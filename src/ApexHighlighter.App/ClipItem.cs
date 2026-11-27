@@ -38,6 +38,12 @@ public sealed class ClipItem : INotifyPropertyChanged
 
     public bool IsAuto => _candidate != null;
 
+    /// <summary>The scan's suggestion this clip came from (null for a clip added by hand).</summary>
+    public Candidate? Candidate => _candidate;
+
+    /// <summary>For a clip added by hand: where the playhead was.</summary>
+    public double ManualCenter => _manualCenter;
+
     /// <summary>Where the preview picture is taken: just after the first prompt appears, or the playhead for a manual clip.</summary>
     public double ThumbTime => _candidate != null ? _candidate.FirstEvent + 0.4 : _manualCenter;
 
