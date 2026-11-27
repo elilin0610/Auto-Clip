@@ -4,14 +4,27 @@
 
 關台後把 Apex 錄影丟進來，程式會找出最多 3 段值得發 YouTube 的交戰。你可以播放、微調起訖、跳過不要的，再匯出成 16:9 MP4。原始錄影只讀取，不會修改。
 
+## 安裝（一般使用者）
+
+1. 到 [Releases](https://github.com/elilin0610/Auto-Clip/releases) 頁面下載 `ApexHighlighter-<版本>-setup.exe`。
+2. 執行它。預設只裝給目前的使用者（`%LOCALAPPDATA%\Programs\Apex Highlight Picker`），所以不需要系統管理員權限。第一頁也可以改選「Install for all users」，那樣才會要求管理員。
+3. 在 Windows 搜尋（開始功能表）輸入「Apex Highlight Picker」就能打開。每個 Windows 使用者自己裝完就會有開始功能表項目，不用跑任何指令碼。
+4. 解除安裝：Settings > Apps > Installed apps > Apex Highlight Picker > Uninstall。
+
+安裝程式內含 .NET 執行階段，不用另外裝 .NET。FFmpeg 還是要裝（見「需要」）。解除安裝後，你的設定會留在使用者資料夾裡。
+
+**Smart App Control：**目前發佈的版本還沒有簽章。開著 Smart App Control（SAC）的電腦，就算裝好了，Windows 也會拒絕執行並顯示「Application Control policy has blocked this file」。安裝程式本身也可能跳出 SmartScreen 警告（「Windows protected your PC」）。在 App 簽章之前，SAC 開著的人只能用 CLI，或是關掉 SAC（關了基本上就回不去）。詳見下面的[從原始碼執行](#running)。SAC 關著（或從來沒開過，從舊版 Windows 升級上來的電腦常是這樣）的電腦只會看到 SmartScreen 警告，按 More info > Run anyway 即可。
+
 ## 需要
 
-- Windows 10/11、.NET 11 SDK
+- Windows 10/11（64 位元）。要從原始碼組建才需要 .NET 11 SDK
 - FFmpeg：`winget install Gyan.FFmpeg`。程式會自動找 PATH 和 winget 的安裝位置，也可以把 `ffmpeg.exe`、`ffprobe.exe` 放到程式資料夾的 `ffmpeg\` 子資料夾，或用環境變數 `APEXHL_FFMPEG_DIR` 指定資料夾。只會搜尋絕對路徑（PATH 裡 `.` 這類相對路徑會跳過），winget 資料夾只找 `Gyan.FFmpeg` 和 `BtbN.FFmpeg` 兩個套件。log 會顯示找到哪一個 FFmpeg 和它的版本，比 6.0 舊會提醒。FFmpeg 會讀取每一支錄影，請保持更新（`winget upgrade Gyan.FFmpeg`）。
 - Windows 內建 OCR：遊戲是什麼語言，就要裝那個語言包（設定 > 時間與語言 > 語言）。不需要付費 API。
 - 有 NVIDIA 顯卡時用 NVENC 匯出，沒有就自動改用 x264。
 
-## 執行
+## 從原始碼執行
+
+<a id="running"></a>
 
 ```powershell
 dotnet run --project src\ApexHighlighter.App -c Release
@@ -37,14 +50,14 @@ dotnet run --project src\ApexHighlighter.App -c Release
 
 資安說明：[docs/SECURITY.zh-TW.md](docs/SECURITY.zh-TW.md)。
 
-想在 Windows 搜尋（開始功能表）找到 App，先組建一次 Release 版，再建立捷徑：
+如果不用安裝程式、自己從原始碼組建，也可以讓 Windows 搜尋（開始功能表）找到 App：先組建一次 Release 版，再建立捷徑：
 
 ```powershell
 dotnet build src\ApexHighlighter.App -c Release
 powershell -NoProfile -File scripts\install-shortcut.ps1
 ```
 
-開始功能表會多一個「Apex Highlight Picker」（只裝在目前使用者，不需要系統管理員）。組建位置改了就再跑一次；Smart App Control 擋 exe 時加 `-UseDotnet`，要刪掉加 `-Remove`。如果 PowerShell 說不能執行指令碼，先執行一次 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 允許本機指令碼。
+開始功能表會多一個「Apex Highlight Picker」，但只有目前這個 Windows 使用者看得到，其他使用者要各自再跑一次；上面的安裝程式沒有這個限制。之後若改用安裝程式，會取代這個捷徑。組建位置改了就再跑一次；Smart App Control 擋 exe 時加 `-UseDotnet`，要刪掉加 `-Remove`。如果 PowerShell 說不能執行指令碼，先執行一次 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 允許本機指令碼。
 
 CLI（和介面用同一套核心）：
 
@@ -138,7 +151,8 @@ src/ApexHighlighter.App    WPF 介面
 src/ApexHighlighter.Cli    命令列：掃描、匯出、批次、OCR 測試、音畫同步檢查
 tests/ApexHighlighter.Tests 單元測試（關鍵字規則、分群、二次確認、流水線、匯出參數、快取、佇列…）
 harness/                   一鍵驗證腳本和 Claude 的自動修正流程（自行啟用：enable-gate.ps1）
-scripts/package.ps1        打包發佈 zip、可選簽章、SHA256SUMS.txt
+scripts/package.ps1        打包發佈 zip、安裝程式、可選簽章、SHA256SUMS.txt
+installer/                 安裝程式的 Inno Setup 腳本（開始功能表項目、解除安裝）
 .github/workflows/         發佈流程（弱點檢查、測試、簽章、雜湊）
 docs/                      SECURITY、SIGNING 說明、截圖
 acceptance/                驗收紀錄與掃描報告

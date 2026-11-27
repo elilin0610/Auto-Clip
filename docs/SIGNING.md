@@ -35,14 +35,14 @@ The workflow uses `azure/trusted-signing-action@v0`. If Microsoft has renamed it
 ## Option B: OV certificate on a USB token (works in Taiwan)
 
 1. Buy an OV code signing certificate and complete the CA's validation. The CA ships a USB token, or gives you access to its cloud signing service.
-2. Install the Windows SDK (for `signtool.exe`) and the token's driver, plug in the token, and find the certificate thumbprint: `Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert`.
-3. Build, sign, zip and hash:
+2. Install the Windows SDK (for `signtool.exe`), Inno Setup 6 (`winget install JRSoftware.InnoSetup`, for the installer) and the token's driver, plug in the token, and find the certificate thumbprint: `Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert`.
+3. Build, sign, zip, build the installer, sign it, and hash:
    ```powershell
    powershell -NoProfile -ExecutionPolicy RemoteSigned -File scripts\package.ps1 -Version 0.3.0 -CertThumbprint <thumbprint>
    ```
-4. Upload `out\release\*.zip` and `out\release\SHA256SUMS.txt` to a GitHub Release.
+4. Upload `out\release\*-setup.exe`, `out\release\*.zip` and `out\release\SHA256SUMS.txt` to a GitHub Release.
 
-If the CA offers cloud signing instead of a token, follow its signtool or GitHub Action instructions and sign `out\publish` between `package.ps1 -PublishOnly` and `package.ps1 -PackOnly`.
+If the CA offers cloud signing instead of a token, follow its signtool or GitHub Action instructions and sign in two places: `out\publish` after `package.ps1 -PublishOnly`, then `out\release\*-setup.exe` after `package.ps1 -PackOnly -NoChecksum`; finish with `package.ps1 -ChecksumOnly`. The setup exe has to be signed too, otherwise SmartScreen warns about it even though the app inside is signed.
 
 ## Checking a download (for users)
 

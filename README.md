@@ -4,14 +4,27 @@
 
 After your stream ends, drop in your Apex recording and the app finds up to 3 fights worth posting to YouTube. You can play them, fine-tune the start and end, skip the ones you don't want, then export them as 16:9 MP4s. The original recording is only read, never modified.
 
+## Install (for most people)
+
+1. Download `ApexHighlighter-<version>-setup.exe` from the [Releases](https://github.com/elilin0610/Auto-Clip/releases) page.
+2. Run it. By default it installs for your user only (`%LOCALAPPDATA%\Programs\Apex Highlight Picker`), so no admin rights are needed. The first page lets you choose "Install for all users" instead, which asks for admin.
+3. Type "Apex Highlight Picker" in Windows Search (Start menu) to open it. Each Windows user who installs it gets the Start menu entry automatically; nobody has to run a script.
+4. To uninstall: Settings > Apps > Installed apps > Apex Highlight Picker > Uninstall.
+
+The installer includes the .NET runtime, so you don't need to install .NET. You still need FFmpeg (see Requirements). Your settings stay in your user folder after uninstalling.
+
+**Smart App Control:** releases are not signed yet. On a PC where Smart App Control (SAC) is on, Windows refuses to run the app and shows "Application Control policy has blocked this file", even after it is installed. The setup exe itself may also get a SmartScreen warning ("Windows protected your PC"). Until the app is signed, people with SAC on can only use the CLI, or turn SAC off, which is effectively permanent. Details are under [Running](#running) below. PCs where SAC is off (or was never on, which is common on PCs upgraded from older Windows) only see the SmartScreen warning: click More info > Run anyway.
+
 ## Requirements
 
-- Windows 10/11, .NET 11 SDK
+- Windows 10/11 (64-bit). To build from source: .NET 11 SDK
 - FFmpeg: `winget install Gyan.FFmpeg`. The app looks on PATH and in winget's install location automatically. You can also put `ffmpeg.exe` and `ffprobe.exe` in an `ffmpeg\` subfolder next to the app, or point `APEXHL_FFMPEG_DIR` at a folder. Only absolute folders are searched (relative PATH entries such as `.` are skipped), and in winget's folder only the `Gyan.FFmpeg` and `BtbN.FFmpeg` packages. The log shows which FFmpeg was found and its version, and warns if it is older than 6.0. FFmpeg reads every recording, so keep it updated (`winget upgrade Gyan.FFmpeg`).
 - Windows built-in OCR: install the language pack for whatever language the game is in (Settings > Time & language > Language). No paid API is needed.
 - Exports use NVENC when you have an NVIDIA GPU, and fall back to x264 otherwise.
 
-## Running
+## Running from source
+
+<a id="running"></a>
 
 ```powershell
 dotnet run --project src\ApexHighlighter.App -c Release
@@ -37,14 +50,14 @@ Releases come with a `SHA256SUMS.txt` file so people can check the download.
 
 Security notes: [docs/SECURITY.md](docs/SECURITY.md).
 
-To find the app in Windows Search (Start menu), build the Release version once and create a shortcut:
+If you build from source instead of using the installer, you can still add it to Windows Search (Start menu): build the Release version once and create a shortcut:
 
 ```powershell
 dotnet build src\ApexHighlighter.App -c Release
 powershell -NoProfile -File scripts\install-shortcut.ps1
 ```
 
-This adds "Apex Highlight Picker" to your Start menu (current user only, no admin needed). Run it again after the build location changes; add `-UseDotnet` if Smart App Control blocks the exe, or `-Remove` to delete it. If PowerShell says running scripts is disabled, allow local scripts once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+This adds "Apex Highlight Picker" to your Start menu for the current Windows user only, so every other user would have to run it too; the installer above does not have that limitation. If you later run the installer, it replaces this shortcut. Run it again after the build location changes; add `-UseDotnet` if Smart App Control blocks the exe, or `-Remove` to delete it. If PowerShell says running scripts is disabled, allow local scripts once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 
 CLI (same core as the UI):
 
@@ -138,7 +151,8 @@ src/ApexHighlighter.App    WPF interface
 src/ApexHighlighter.Cli    command line: scan, export, batch, OCR test, A/V sync check
 tests/ApexHighlighter.Tests unit tests (keyword rules, clustering, second look, pipeline, export arguments, cache, queue…)
 harness/                   end-to-end verify script and Claude's fix loop (opt-in: enable-gate.ps1)
-scripts/package.ps1        release zips, optional signing, SHA256SUMS.txt
+scripts/package.ps1        release zips, installer, optional signing, SHA256SUMS.txt
+installer/                 Inno Setup script for the setup exe (Start menu entry, uninstall)
 .github/workflows/         release workflow (vulnerability check, tests, signing, checksums)
 docs/                      SECURITY.md, SIGNING.md, screenshots
 acceptance/                acceptance notes and scan reports

@@ -35,14 +35,14 @@
 ## 方式 B：OV 憑證 + USB token（台灣可用）
 
 1. 購買 OV 程式碼簽章憑證，完成憑證商的驗證。憑證商會寄 USB token，或給你雲端簽章服務的帳號。
-2. 安裝 Windows SDK（裡面有 `signtool.exe`）和 token 的驅動程式，插上 token，查憑證指紋：`Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert`。
-3. 組建、簽章、壓縮、算雜湊：
+2. 安裝 Windows SDK（裡面有 `signtool.exe`）、Inno Setup 6（`winget install JRSoftware.InnoSetup`，做安裝程式用）和 token 的驅動程式，插上 token，查憑證指紋：`Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert`。
+3. 組建、簽章、壓縮、做安裝程式並簽章、算雜湊：
    ```powershell
    powershell -NoProfile -ExecutionPolicy RemoteSigned -File scripts\package.ps1 -Version 0.3.0 -CertThumbprint <指紋>
    ```
-4. 把 `out\release\*.zip` 和 `out\release\SHA256SUMS.txt` 上傳到 GitHub Release。
+4. 把 `out\release\*-setup.exe`、`out\release\*.zip` 和 `out\release\SHA256SUMS.txt` 上傳到 GitHub Release。
 
-如果憑證商提供的是雲端簽章而不是 token，就照它的 signtool 或 GitHub Action 說明，在 `package.ps1 -PublishOnly` 和 `package.ps1 -PackOnly` 之間簽 `out\publish`。
+如果憑證商提供的是雲端簽章而不是 token，就照它的 signtool 或 GitHub Action 說明，分兩次簽：`package.ps1 -PublishOnly` 之後簽 `out\publish`，`package.ps1 -PackOnly -NoChecksum` 之後簽 `out\release\*-setup.exe`，最後跑 `package.ps1 -ChecksumOnly`。安裝程式本身也要簽，不然就算裡面的 App 有簽，SmartScreen 還是會對安裝程式跳警告。
 
 ## 核對下載檔（給使用者）
 
