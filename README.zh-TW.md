@@ -22,6 +22,15 @@ dotnet run --project src\ApexHighlighter.App -c Release
 - 到「Windows 安全性 > 應用程式與瀏覽器控制 > Smart App Control」關掉，或
 - 先用 CLI。
 
+想在 Windows 搜尋（開始功能表）找到 App，先組建一次 Release 版，再建立捷徑：
+
+```powershell
+dotnet build src\ApexHighlighter.App -c Release
+powershell -NoProfile -File scripts\install-shortcut.ps1
+```
+
+開始功能表會多一個「Apex Highlight Picker」（只裝在目前使用者，不需要系統管理員）。組建位置改了就再跑一次；Smart App Control 擋 exe 時加 `-UseDotnet`，要刪掉加 `-Remove`。如果 PowerShell 說不能執行指令碼，先執行一次 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 允許本機指令碼。
+
 CLI（和介面用同一套核心）：
 
 ```powershell
